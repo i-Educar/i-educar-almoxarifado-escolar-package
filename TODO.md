@@ -2,6 +2,13 @@
 
 > Pacote: `buriti/i-educar-almoxarifado-escolar-package` · TR **5.7** · Prioridade **P0**
 
+
+## Onda 2 (código inicial 2026-11-24)
+
+- [x] Services de domínio + testes
+- [x] docs/onda-2/
+- [ ] Migrations/UI completas
+
 ## Backlog Laguna
 
 - [ ] Checklist 5.7.x
