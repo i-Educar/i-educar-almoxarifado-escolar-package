@@ -2,8 +2,6 @@
 
 namespace iEducar\Packages\BuritiAlmoxarifadoEscolar\Providers;
 
-use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\SaldoEstoque;
-use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\DistribuicaoEscola;
 use Illuminate\Support\ServiceProvider;
 
 class AlmoxarifadoEscolarServiceProvider extends ServiceProvider
@@ -12,8 +10,7 @@ class AlmoxarifadoEscolarServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->singleton(SaldoEstoque::class);
-        $this->app->singleton(DistribuicaoEscola::class);
+        // Services são value objects — instanciar com `new` nos callers (não bind no container).
     }
 
     public function boot(): void
