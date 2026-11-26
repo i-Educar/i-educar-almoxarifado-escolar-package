@@ -17,6 +17,8 @@ class AlmoxarifadoEscolarServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(dirname(__DIR__, 2).'/config/almoxarifado.php', 'almoxarifado');
+        // Fora de runningInConsole(): o check do Ambiente Laguna (HTTP) usa Artisan::all().
+        $this->commands([AlmoxarifadoDemoCommand::class]);
     }
 
     public function boot(): void
@@ -31,7 +33,6 @@ class AlmoxarifadoEscolarServiceProvider extends ServiceProvider
             if (\App\Support\Tenancy\PackageTenant::allows(self::PACKAGE)) {
                 $this->loadMigrationsFrom($root.'/database/migrations');
             }
-            $this->commands([AlmoxarifadoDemoCommand::class]);
         }
 
         Route::middleware([
