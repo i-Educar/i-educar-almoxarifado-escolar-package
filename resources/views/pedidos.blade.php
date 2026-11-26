@@ -2,87 +2,65 @@
 @section('titulo', 'Pedidos')
 @section('migalha', 'Pedidos')
 @section('icone-tela', 'fa-truck')
-@section('titulo-tela', 'Pedidos')
+@section('titulo-tela', 'Pedidos por setor')
 @section('lead')
-    Consultar pedidos já feitos é um fluxo; abrir um carrinho novo é outro — escolha abaixo.
+    Ciclo: carrinho → separação → aceite → entrega → conferência. Cada status tem cor e ícone próprios.
 @endsection
 @section('acoes-topo')
+    <button type="button" class="botao primaria {{ empty($podeCarrinhoSetor) ? 'buriti-acao-bloqueada' : '' }}"
+            data-buriti-modal="modal-novo-pedido"
+            @if(empty($podeCarrinhoSetor)) title="Sem permissão — veja o aviso" @endif>
+        <i class="fa {{ empty($podeCarrinhoSetor) ? 'fa-lock' : 'fa-plus' }}"></i> Abrir carrinho
+    </button>
+    <button type="button" class="botao consulta" data-buriti-modal="modal-buscar-pedidos">
+        <i class="fa fa-search"></i> Buscar
+    </button>
+    <a class="botao claro" href="{{ url('/almoxarifado-escolar/alertas') }}"><i class="fa fa-bell"></i> Alertas</a>
     <a class="botao claro" href="{{ url('/almoxarifado-escolar/movimentos') }}"><i class="fa fa-exchange"></i> Entrada/saída</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar') }}"><i class="fa fa-dashboard"></i> Painel</a>
+@endsection
+
+@section('foco')
+@php
+    $qAbertos = count($carrinhos ?? []);
+    $qTotal = count($linhas ?? []);
+@endphp
+<section class="buriti-foco">
+    <p class="buriti-foco-kicker">Agora</p>
+    <h2 class="buriti-foco-titulo">
+        @if($qAbertos > 0)
+            {{ $qAbertos }} carrinho{{ $qAbertos === 1 ? '' : 's' }} em andamento
+        @else
+            Nenhum carrinho aberto
+        @endif
+    </h2>
+    <p class="buriti-foco-texto">
+        @if(empty($podeCarrinhoSetor))
+            Carrinho por setor bloqueado — peça a permissão ou use Entrada/saída.
+        @elseif($qAbertos > 0)
+            Monte os itens e avance separação → entrega. Histórico: {{ $qTotal }} pedido(s).
+        @else
+            Use <strong>Abrir carrinho</strong> para solicitar itens disponíveis ao setor.
+        @endif
+    </p>
+</section>
 @endsection
 
 @section('conteudo')
 
-    <div class="fluxo-sep">Consulta</div>
-    <section class="fluxo-bloco consulta">
-        <header class="fluxo-cabeca">
-            <div>
-                <h2><i class="fa fa-search"></i> Histórico por solicitante</h2>
-                <p>Só para localizar pedidos já registrados — não abre carrinho novo.</p>
-            </div>
-            <span class="selo-fluxo">Consultar</span>
-        </header>
-        <form class="form-grid" method="get" action="{{ url('/almoxarifado-escolar/pedidos') }}">
-            @include('buriti-ui::select-usuario', [
-                'campo' => 'solicitante_id',
-                'rotulo' => 'Quem pediu',
-                'usuarios' => $usuarios ?? [],
-                'selecionado' => $filtroSolicitanteId ?? null,
-                'ajuda' => 'Pessoas com acesso ao almoxarifado no seu escopo (escola/rede).',
-            ])
-            <div class="acoes">
-                <button class="botao" type="submit"><i class="fa fa-search"></i> Buscar</button>
-                <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos') }}">Limpar</a>
-            </div>
-        </form>
-    </section>
-
-    <div class="fluxo-sep">Novo pedido</div>
-    <section class="fluxo-bloco acao">
-        <header class="fluxo-cabeca">
-            <div>
-                <h2><i class="fa fa-shopping-cart"></i> Abrir carrinho</h2>
-                <p>Começa um pedido novo: escolha a escola e, se quiser, quem está solicitando.</p>
-            </div>
-            <span class="selo-fluxo">Criar</span>
-        </header>
-        <form class="form-grid" method="post" action="{{ url('/almoxarifado-escolar/pedidos') }}">
-            @csrf
-            @include('buriti-ui::select-busca', [
-                'campo' => 'escola',
-                'rotulo' => 'Escola',
-                'icone' => 'fa-building',
-                'opcoes' => collect($escolas ?? [])->map(fn ($e) => ['id' => $e['nome'], 'nome' => $e['nome']])->all(),
-                'selecionado' => null,
-                'placeholder' => 'Digite o nome da escola…',
-                'obrigatorio' => true,
-                'ajuda' => 'Escola que está pedindo o material.',
-            ])
-            @include('buriti-ui::select-usuario', [
-                'campo' => 'solicitante_id',
-                'rotulo' => 'Solicitante (opcional)',
-                'usuarios' => $usuarios ?? [],
-                'ajuda' => 'Quem pede em nome da escola — lista filtrada por permissão do almoxarifado.',
-            ])
-            <div class="acoes"><button class="botao" type="submit"><i class="fa fa-plus"></i> Abrir carrinho</button></div>
-        </form>
-    </section>
-
     @if(!empty($carrinhos))
-        <div class="fluxo-sep">Em andamento</div>
         <div class="bloco">
             <h2><i class="fa fa-shopping-basket"></i> Carrinhos abertos</h2>
             <div class="card-grid">
                 @foreach($carrinhos as $i => $l)
-                    <article class="card" style="animation-delay: {{ $i * 0.04 }}s">
+                    <article class="card pedido-st st-carrinho" style="--st-cor:#5b6b76;animation-delay: {{ $i * 0.04 }}s">
                         <header>
-                            <span class="ico"><i class="fa fa-shopping-cart"></i></span>
+                            <span class="ico" style="background:linear-gradient(145deg,#7a8a96,#5b6b76)"><i class="fa fa-shopping-cart"></i></span>
                             <div>
                                 <h3>{{ $l['titulo'] }}</h3>
                                 <p class="meta">{{ $l['meta'] }}</p>
                             </div>
                         </header>
-                        <span class="badge warn">{{ $l['badge'] }}</span>
+                        <span class="badge st-carrinho"><i class="fa fa-shopping-cart"></i> {{ $l['badge'] }}</span>
                         <p style="margin:8px 0 0;color:var(--suave)">{{ $l['corpo'] }}</p>
                         <p style="margin:10px 0 0">
                             <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$l['id']) }}"><i class="fa fa-pencil"></i> Montar itens</a>
@@ -98,18 +76,28 @@
         @if(!empty($linhas))
             <div class="card-grid">
                 @foreach($linhas as $i => $l)
-                    <article class="card" style="animation-delay: {{ $i * 0.04 }}s">
+                    @php
+                        $stClasse = $l['status_classe'] ?? 'st-outro';
+                        $stCor = $l['status_cor'] ?? '#5b6b76';
+                        $stIco = $l['status_icone'] ?? 'fa-truck';
+                    @endphp
+                    <article class="card pedido-st {{ $stClasse }}" style="--st-cor:{{ $stCor }};animation-delay: {{ $i * 0.04 }}s">
                         <header>
-                            <span class="ico"><i class="fa fa-truck"></i></span>
+                            <span class="ico" style="background:linear-gradient(145deg, color-mix(in srgb, {{ $stCor }} 70%, #fff), {{ $stCor }})">
+                                <i class="fa {{ $stIco }}"></i>
+                            </span>
                             <div>
                                 <h3>{{ $l['titulo'] ?? ('Pedido '.($i+1)) }}</h3>
                                 <p class="meta">{{ $l['meta'] ?? '' }}</p>
                             </div>
                         </header>
-                        <span class="badge {{ $l['badge_tom'] ?? 'ok' }}">{{ $l['badge'] ?? '' }}</span>
+                        <span class="badge {{ $stClasse }}"><i class="fa {{ $stIco }}"></i> {{ $l['badge'] ?? '' }}</span>
                         <p style="margin:8px 0 0;color:var(--suave)">{{ $l['corpo'] ?? '' }}</p>
                         <p style="margin:10px 0 0">
-                            <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$l['id']) }}"><i class="fa fa-eye"></i> Abrir</a>
+                            <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$l['id']) }}">
+                                <i class="fa {{ !empty($l['finalizado']) ? 'fa-archive' : 'fa-eye' }}"></i>
+                                {{ !empty($l['finalizado']) ? 'Consultar' : 'Abrir' }}
+                            </a>
                         </p>
                     </article>
                 @endforeach
@@ -124,4 +112,29 @@
             </p>
         @endif
     </div>
+
+    @include('buriti-ui::operacao-modal', [
+        'id' => 'modal-buscar-pedidos',
+        'titulo' => 'Buscar pedidos',
+        'lead' => 'Filtra o histórico por quem pediu — não abre carrinho novo.',
+        'corpo' => view('almoxarifado::partials.pedidos-buscar', [
+            'usuarios' => $usuarios ?? [],
+            'filtroSolicitanteId' => $filtroSolicitanteId ?? null,
+        ])->render(),
+    ])
+
+    @include('buriti-ui::operacao-modal', [
+        'id' => 'modal-novo-pedido',
+        'titulo' => !empty($podeCarrinhoSetor) ? 'Abrir carrinho do setor' : 'Carrinho bloqueado',
+        'lead' => !empty($podeCarrinhoSetor)
+            ? 'Pedido de itens disponíveis: separação → entrega.'
+            : 'Sem permissão de carrinho por setor.',
+        'corpo' => !empty($podeCarrinhoSetor)
+            ? view('almoxarifado::partials.pedidos-novo', [
+                'escolas' => $escolas ?? [],
+                'setores' => $setores ?? [],
+                'usuarios' => $usuarios ?? [],
+            ])->render()
+            : '<p style="margin:0;color:var(--suave)">A permissão <strong>Carrinho por setor</strong> está desligada (padrão). Um gestor precisa marcar <em>cadastra</em> no processo do menu do tipo de usuário ou habilitar <code>ALMOXARIFADO_CARRINHO_SETOR=true</code>.</p>',
+    ])
 @endsection

@@ -12,6 +12,17 @@ final class Processos
 
     public const int MOVIMENTOS = 881405;
 
+    /** Carrinho de pedidos pelo setor (default sem cadastro). */
+    public const int CARRINHO_SETOR = 881406;
+
+    /** Pedir item não cadastrado / sem saldo (alerta de compra). */
+    public const int PEDIDO_FORA_CATALOGO = 881407;
+
+    public const int ALERTAS_COMPRA = 881408;
+
+    /** Retirar itens faltosos do pedido (nota parcial / não atendidos). */
+    public const int RETIRAR_FALTOSOS = 881409;
+
     /** @return array<int, string> */
     public static function titulos(): array
     {
@@ -22,6 +33,10 @@ final class Processos
             self::SALDOS => 'Saldos',
             self::PEDIDOS => 'Pedidos',
             self::MOVIMENTOS => 'Entrada e saída',
+            self::CARRINHO_SETOR => 'Carrinho por setor',
+            self::PEDIDO_FORA_CATALOGO => 'Pedido fora do catálogo',
+            self::ALERTAS_COMPRA => 'Alertas de compra',
+            self::RETIRAR_FALTOSOS => 'Retirar itens faltosos',
         ];
     }
 }

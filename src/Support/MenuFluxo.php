@@ -25,14 +25,15 @@ final class MenuFluxo
                 'itens' => $filtrar([
                     $item('painel', 'Início', '/almoxarifado-escolar', 'fa-th-large'),
                     $item('itens', 'Catálogo de itens', '/almoxarifado-escolar/itens', 'fa-cube'),
-                    $item('pedidos', 'Pedidos das escolas', '/almoxarifado-escolar/pedidos', 'fa-shopping-cart'),
                     $item('movimentos', 'Entrada e saída', '/almoxarifado-escolar/movimentos', 'fa-exchange'),
+                    $item('pedidos', 'Pedidos / setores', '/almoxarifado-escolar/pedidos', 'fa-shopping-cart'),
                 ]),
             ],
             [
                 'nome' => 'Consultas',
                 'itens' => $filtrar([
                     $item('saldos', 'Saldos por escola', '/almoxarifado-escolar/saldos', 'fa-bar-chart'),
+                    $item('alertas', 'Alertas de compra', '/almoxarifado-escolar/alertas', 'fa-bell'),
                 ]),
             ],
         ], static fn (array $g): bool => $g['itens'] !== []));

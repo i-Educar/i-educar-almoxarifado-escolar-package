@@ -6,100 +6,325 @@
     $proxima = $proxima ?? null;
     $podeAssinar = ! empty($podeAssinar);
     $usuarioLogado = $usuarioLogado ?? ['nome' => '—', 'login' => null];
+    $bloqueioEntrega = ! empty($bloqueioEntrega);
+    $etapaBloqueada = ! empty($etapaBloqueada);
+    $faltosos = $faltosos ?? [];
+    $podeRetirarFaltosos = ! empty($podeRetirarFaltosos);
+    $naoAtendidos = $p['itens_nao_atendidos'] ?? [];
+    $finalizado = ! empty($finalizado) || \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::finalizado($p);
+    $podeEmitirRemessa = isset($podeEmitirRemessa)
+        ? ! empty($podeEmitirRemessa)
+        : \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::podeEmitirRemessa($p);
+    $visual = $visual ?? \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::visualStatus($status, $p);
 @endphp
 @section('titulo', 'Nota do pedido #'.$id)
 @section('migalha', 'Pedidos / Nota #'.$id)
-@section('icone-tela', 'fa-file-text-o')
+@section('icone-tela', $visual['icone'])
 @section('titulo-tela', 'Nota de entrega #'.$id)
 @section('lead')
-    {{ $p['escola'] ?? '—' }} · {{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloStatus($status) }}
+    {{ $p['escola'] ?? '—' }} · {{ $visual['rotulo'] }}
 @endsection
 @section('acoes-topo')
     <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}"><i class="fa fa-arrow-left"></i> Pedido</a>
+    @if($podeEmitirRemessa)
+        <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> QR</a>
+        <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}"><i class="fa fa-tags"></i> Etiquetas</a>
+    @endif
+    <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota/pdf') }}"><i class="fa fa-file-pdf-o"></i> PDF institucional</a>
     <button class="botao claro" type="button" onclick="window.print()"><i class="fa fa-print"></i> Imprimir</button>
 @endsection
 
 @section('conteudo')
+@php
+    $inst = (array) config('exportacao.institucional', []);
+    $corInst = (string) ($inst['cor'] ?? ($identidade['cor'] ?? '#0a7a8a'));
+    $entidadeInst = (string) ($inst['entidade'] ?? ($municipio ?? 'Prefeitura Municipal'));
+    $secretariaInst = (string) ($inst['secretaria'] ?? 'Secretaria Municipal de Educação');
+    $sistemaInst = (string) ($inst['sistema'] ?? 'i-Educar');
+@endphp
 <style>
-    .nota { background:#fff; border:1px solid var(--linha); border-radius:14px; padding:20px; }
-    .nota-cabeca { display:flex; justify-content:space-between; gap:16px; border-bottom:2px solid var(--cor); padding-bottom:12px; margin-bottom:14px; }
-    .nota-cabeca h2 { margin:0 0 4px; font-size:1.2rem; }
+    .nota {
+        --nota-cor: {{ $corInst }};
+        background:#fff; border:1px solid var(--linha); border-radius:14px; padding:20px 22px 24px;
+        border-top: 4px solid var(--nota-cor);
+    }
+    .nota.parcial-bloqueada { border-color:#c0392b; border-top-color:#c0392b; box-shadow:0 0 0 3px rgba(192,57,43,.12); }
+    .nota.parcial-ok { border-color:var(--ambar); border-top-color:var(--ambar); }
+    .nota-institucional {
+        display:flex; gap:14px; align-items:center;
+        border-bottom:3px solid var(--nota-cor); padding-bottom:12px; margin-bottom:14px;
+    }
+    .nota-institucional .brasao {
+        width:54px; height:54px; border-radius:12px; flex:none;
+        display:grid; place-items:center; color:#fff; font-weight:800; font-size:1.25rem;
+        background:linear-gradient(145deg, color-mix(in srgb, var(--nota-cor) 75%, #fff), var(--nota-cor));
+    }
+    .nota-institucional h1 { margin:0; font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; color:var(--nota-cor); }
+    .nota-institucional .entidade { margin:2px 0 0; font-size:1.05rem; font-weight:800; color:var(--tinta); }
+    .nota-institucional .meta-inst { margin:2px 0 0; color:var(--suave); font-size:.8rem; }
+    .nota-cabeca { display:flex; justify-content:space-between; gap:16px; margin-bottom:14px; }
+    .nota-cabeca h2 { margin:0 0 4px; font-size:1.15rem; color:var(--nota-cor); }
     .nota-cabeca p { margin:0; color:var(--suave); font-size:.86rem; }
-    .assinaturas { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:18px; }
-    .assinatura { border:1px dashed var(--linha); border-radius:12px; padding:12px; min-height:110px; }
-    .assinatura strong { display:block; margin-bottom:8px; color:var(--cor); }
-    .assinatura .linha { border-top:1px solid #333; margin-top:36px; padding-top:4px; font-size:.78rem; color:var(--suave); }
-    .assinatura .feito { color:var(--ok); font-size:.86rem; margin:0 0 4px; }
-    .assinatura .quando { margin:0; font-size:.78rem; color:var(--suave); }
+    .faixa-parcial { margin:0 0 14px; padding:10px 12px; border-radius:10px; font-size:.88rem; }
+    .faixa-parcial.bloqueio { background:#fff5f5; color:#922b21; border:1px solid #f5c6cb; }
+    .faixa-parcial.info { background:#fffaf0; color:#8a6d3b; border:1px solid #f0e0c0; }
+    .assinaturas {
+        display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:28px 32px;
+        margin-top:28px; padding-top:14px; border-top:1px solid var(--linha);
+        page-break-inside: avoid;
+    }
+    .assinaturas > h3 {
+        grid-column:1 / -1; margin:0 0 -8px; font-size:.78rem; letter-spacing:.06em;
+        text-transform:uppercase; color:var(--nota-cor);
+    }
+    .assinatura {
+        text-align:center; padding:48px 12px 0; min-height:0;
+        border:0; background:transparent; border-radius:0;
+    }
+    .assinatura.bloqueada { opacity:.7; }
+    .assinatura .linha-assina {
+        border-top:1px solid #1a242b; margin:0 18px 8px; height:0;
+    }
+    .assinatura .nome-assina {
+        display:block; margin:0; font-size:.9rem; font-weight:700; color:var(--tinta);
+    }
+    .assinatura .cargo-assina {
+        display:block; margin:2px 0 0; font-size:.8rem; font-weight:650; color:var(--nota-cor);
+    }
+    .assinatura .quando { margin:2px 0 0; font-size:.75rem; color:var(--suave); }
+    .assinatura .pendente { margin:0; font-size:.78rem; color:var(--suave); font-style:italic; }
+    .assinatura .bloqueio-txt { margin:0; color:#c0392b; font-size:.82rem; }
+    .tr-falta { background:#fff5f5; }
+    .tr-nao-atendido { background:#fffaf0; }
+    .nota-rodape-inst {
+        display:none; margin-top:22px; padding-top:10px; border-top:1px solid var(--linha);
+        color:var(--suave); font-size:.72rem; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    @media (max-width: 720px) {
+        .assinaturas { grid-template-columns:1fr; gap:22px; }
+    }
     @media print {
-        .lateral, .topo, .cabeca-tela, .acoes-tela, .flash, .bloco-assinar, footer { display:none !important; }
-        .app { display:block; } .miolo { padding:0; } main { padding:0; }
-        .nota { border:0; box-shadow:none; }
+        .lateral, .topo, .cabeca-tela, .acoes-tela, .flash, .bloco-assinar, .bloco-retirar,
+        .bloco, footer, .no-print { display:none !important; }
+        .app { display:block; } .miolo { padding:0; } main { padding:0 !important; }
+        .nota {
+            border:2.5px solid var(--nota-cor); border-radius:0; box-shadow:none;
+            padding:18px 20px 22px; margin:0;
+        }
+        .faixa-parcial { border:1px solid #999; }
+        .nota-rodape-inst { display:flex; }
+        .assinaturas { break-inside: avoid; }
     }
 </style>
 
-<div class="nota">
+@if($finalizado)
+    <div class="faixa-parcial info" style="background:#e8f6ee;color:#17663f;border-color:#b7e0c5">
+        <strong><i class="fa fa-check-circle"></i> Pedido finalizado.</strong>
+        Nota somente para consulta — etiquetas, QR e novas assinaturas bloqueados.
+        @if(!empty($naoAtendidos))
+            Não atendidos: tratativa via pedido de reposição no detalhe do pedido.
+        @endif
+    </div>
+@elseif($bloqueioEntrega)
+    <div class="faixa-parcial bloqueio no-print">
+        <strong><i class="fa fa-ban"></i> Nota parcial — entrega/conferência bloqueadas.</strong>
+        Retire os {{ count($faltosos) }} item(ns) faltoso(s) no pedido para liberar o fluxo.
+        @if($podeRetirarFaltosos)
+            <a href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}" style="margin-left:8px">Ir ao pedido →</a>
+        @endif
+    </div>
+@elseif(!empty($naoAtendidos))
+    <div class="faixa-parcial info">
+        <strong><i class="fa fa-adjust"></i> Nota parcial.</strong>
+        {{ count($naoAtendidos) }} item(ns) não atendido(s) para providência futura (2º pedido após compra).
+        Entrega cobre apenas os itens da tabela abaixo.
+    </div>
+@endif
+
+<div class="nota {{ $bloqueioEntrega ? 'parcial-bloqueada' : (!empty($naoAtendidos) ? 'parcial-ok' : '') }}">
+    <header class="nota-institucional">
+        <div class="brasao" aria-hidden="true">{{ mb_substr($entidadeInst, 0, 1) }}</div>
+        <div>
+            <h1>{{ $secretariaInst }}</h1>
+            <p class="entidade">{{ $entidadeInst }}</p>
+            <p class="meta-inst">{{ $sistemaInst }} · Almoxarifado escolar · Documento oficial</p>
+        </div>
+    </header>
+
     <div class="nota-cabeca">
         <div>
-            <h2>Nota de material — Almoxarifado</h2>
-            <p>{{ $municipio ?? '' }}</p>
+            <h2>Nota de material @if(!empty($p['parcial']) || $bloqueioEntrega)<span style="color:#c0392b;font-size:.85rem">(parcial)</span>@endif</h2>
             <p>Pedido #{{ $id }} · Escola: <strong>{{ $p['escola'] ?? '—' }}</strong></p>
             @if(!empty($p['solicitante']))
                 <p>Solicitante: {{ $p['solicitante'] }}</p>
             @endif
         </div>
         <div style="text-align:right">
-            <p>Fechado em: {{ $p['fechado_em'] ?? ($pedido['created_at'] ?? '—') }}</p>
-            <p>Status: {{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloStatus($status) }}</p>
+            <p>Fechado em: @dataAbs($p['fechado_em'] ?? ($pedido['created_at'] ?? null))</p>
+            <p>Status: {{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloStatus($status, $p) }}</p>
+            @if($bloqueioEntrega)
+                <p style="color:#c0392b;font-weight:600"><i class="fa fa-lock"></i> Entrega bloqueada</p>
+            @endif
             @if(!empty($p['baixa_estoque']))
-                <p style="color:var(--ok)">Baixa de estoque: sim ({{ $p['baixa_em'] ?? '—' }})</p>
+                <p style="color:var(--ok)">Baixa de estoque: sim (@dataAbs($p['baixa_em'] ?? null))</p>
             @endif
         </div>
     </div>
 
+    <p style="margin:0 0 8px;font-size:.82rem;color:var(--suave);font-weight:600">Itens atendidos / em curso</p>
     <table>
         <thead>
-            <tr><th>#</th><th>SKU</th><th>Item</th><th>Qtd</th></tr>
+            <tr><th>#</th><th>SKU</th><th>Item</th><th>Qtd</th><th>Situação</th></tr>
         </thead>
         <tbody>
             @foreach(($p['itens'] ?? []) as $i => $item)
-                <tr>
+                @php
+                    $origem = $item['origem'] ?? 'catalogo';
+                    $ehFalta = in_array($origem, ['sem_saldo', 'fora_catalogo'], true);
+                    $cobertura = null;
+                    foreach (($semCobertura ?? []) as $cob) {
+                        if (strtoupper((string) $cob['sku']) === strtoupper((string) ($item['sku'] ?? ''))) {
+                            $cobertura = $cob;
+                            break;
+                        }
+                    }
+                @endphp
+                <tr class="{{ $ehFalta || $cobertura ? 'tr-falta' : '' }}">
                     <td>{{ $i + 1 }}</td>
                     <td>{{ $item['sku'] }}</td>
                     <td>{{ $item['titulo'] }}</td>
                     <td>{{ $item['quantidade'] }}</td>
+                    <td>
+                        @if($ehFalta)
+                            <span class="badge fail">Faltoso</span>
+                        @elseif($cobertura)
+                            <span class="badge fail">Saldo {{ $cobertura['saldo'] }} · falta {{ $cobertura['falta'] }}</span>
+                        @else
+                            <span class="badge ok">Atendido</span>
+                        @endif
+                    </td>
                 </tr>
             @endforeach
         </tbody>
     </table>
 
+    @if(!empty($naoAtendidos))
+        <p style="margin:16px 0 8px;font-size:.82rem;color:var(--ambar);font-weight:600">Itens não atendidos (providência futura)</p>
+        <table>
+            <thead>
+                <tr><th>#</th><th>SKU</th><th>Item</th><th>Qtd</th><th>Retirado por</th></tr>
+            </thead>
+            <tbody>
+                @foreach($naoAtendidos as $i => $item)
+                    <tr class="tr-nao-atendido">
+                        <td>{{ $i + 1 }}</td>
+                        <td>{{ $item['sku'] ?? '—' }}</td>
+                        <td>{{ $item['titulo'] ?? '—' }}</td>
+                        <td>{{ $item['quantidade'] ?? 1 }}</td>
+                        <td style="font-size:.8rem">
+                            {{ $item['retirado_por'] ?? '—' }}
+                            @if(!empty($item['retirado_em'])) · @dataAbs($item['retirado_em']) @endif
+                        </td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
+
     <div class="assinaturas">
+        <h3>Assinaturas</h3>
         @foreach($etapas as $etapa)
-            @php $a = $p['assinaturas'][$etapa] ?? null; @endphp
-            <div class="assinatura">
-                <strong>{{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloEtapa($etapa) }}</strong>
+            @php
+                $a = $p['assinaturas'][$etapa] ?? null;
+                $bloqEtapa = $bloqueioEntrega && in_array($etapa, ['entrega', 'conferencia'], true) && empty($a);
+                $rotuloEtapa = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloEtapa($etapa);
+            @endphp
+            <div class="assinatura {{ $bloqEtapa ? 'bloqueada' : '' }}">
+                <div class="linha-assina" aria-hidden="true"></div>
                 @if($a)
-                    <p class="feito"><i class="fa fa-check"></i> {{ $a['responsavel'] }}@if(!empty($a['login'])) <span style="font-weight:500;color:var(--suave)">({{ $a['login'] }})</span>@endif</p>
-                    <p class="quando"><i class="fa fa-clock-o"></i> {{ $a['quando'] ?? '—' }}</p>
+                    <span class="nome-assina">{{ $a['responsavel'] }}</span>
+                    <span class="cargo-assina">{{ $rotuloEtapa }}@if(!empty($a['login'])) · {{ $a['login'] }}@endif</span>
+                    <p class="quando">@data($a['quando'] ?? null)</p>
                     @if(!empty($a['observacao']))
-                        <p style="margin:4px 0 0;font-size:.78rem">{{ $a['observacao'] }}</p>
+                        <p class="quando">{{ $a['observacao'] }}</p>
                     @endif
+                @elseif($bloqEtapa)
+                    <span class="nome-assina">________________</span>
+                    <span class="cargo-assina">{{ $rotuloEtapa }}</span>
+                    <p class="bloqueio-txt"><i class="fa fa-lock"></i> Bloqueada até retirar faltosos</p>
                 @else
-                    <div class="linha">Aguardando assinatura digital</div>
+                    <span class="nome-assina">________________</span>
+                    <span class="cargo-assina">{{ $rotuloEtapa }}</span>
+                    <p class="pendente">Aguardando assinatura</p>
                 @endif
             </div>
         @endforeach
     </div>
+
+    <footer class="nota-rodape-inst">
+        <span>{{ $inst['rodape_extra'] ?? 'Documento gerado eletronicamente' }}</span>
+        <span>{{ $sistemaInst }} · Almoxarifado · @dataAbs(now())</span>
+    </footer>
 </div>
 
-@if($proxima && $status !== 'carrinho')
+@if($bloqueioEntrega && $podeRetirarFaltosos && $faltosos !== [])
+    <div class="bloco bloco-retirar" style="margin-top:14px;border-top-color:#c0392b">
+        <h2><i class="fa fa-minus-circle"></i> Retirar itens faltosos</h2>
+        <p style="margin:0 0 12px;color:var(--suave);font-size:.85rem">
+            Cada retirada grava o item em «não atendidos» / nota parcial. Quando não restar falta, a entrega é liberada.
+        </p>
+        @foreach($faltosos as $f)
+            <form class="form-grid" method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/retirar-faltoso') }}" style="margin-bottom:10px;padding:10px;border:1px dashed #f5c6cb;border-radius:10px;background:#fff8f8">
+                @csrf
+                <input type="hidden" name="sku" value="{{ $f['sku'] }}">
+                <div class="campo-fixado col-wide">
+                    <span>{{ $f['sku'] }} — {{ $f['titulo'] }} ({{ $f['quantidade'] }} un.)</span>
+                    <small>{{ ($f['origem'] ?? '') === 'fora_catalogo' ? 'Fora do catálogo' : 'Sem saldo' }}</small>
+                </div>
+                <label class="col-wide">Observação <input name="observacao" placeholder="Opcional — motivo / providência"></label>
+                <div class="acoes">
+                    <button class="botao" type="submit" style="background:#c0392b">
+                        <i class="fa fa-minus-circle"></i> Marcar como não atendido
+                    </button>
+                </div>
+            </form>
+        @endforeach
+    </div>
+@endif
+
+@include('almoxarifado::partials.cobertura-insuficiente', [
+    'id' => $id,
+    'semCobertura' => $semCobertura ?? [],
+    'podeResolverCobertura' => $podeResolverCobertura ?? false,
+])
+
+@if($proxima && $status !== 'carrinho' && ! $finalizado)
     <div class="bloco bloco-assinar" style="margin-top:14px">
         <h2><i class="fa fa-pencil"></i> Registrar {{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloEtapa($proxima) }}</h2>
         @if($proxima === 'entrega')
-            <p style="color:var(--suave);margin:0 0 10px">Ao assinar a entrega, o sistema dá baixa automática no estoque dos itens desta nota.</p>
+            <p style="color:var(--suave);margin:0 0 10px">Ao assinar a entrega, o sistema dá baixa automática no estoque dos itens atendidos desta nota.</p>
+        @endif
+        @if($proxima === 'conferencia')
+            <p style="color:var(--suave);margin:0 0 10px">A conferência encerra o ciclo: qualidade e materiais conferidos. Depois disso não há etiquetas nem novas confirmações.</p>
         @endif
 
-        @if($podeAssinar)
+        @if(!empty($semCobertura))
+            <p class="flash erro" style="margin:0">
+                <i class="fa fa-ban"></i>
+                A assinatura da entrega não baixa o estoque enquanto a quantidade pedida for maior que o saldo.
+                Use o ajuste acima: entregar o disponível e comprar a falta, ou retirar o item e seguir com os demais.
+            </p>
+        @elseif($etapaBloqueada)
+            <p class="flash erro" style="margin:0">
+                <i class="fa fa-ban"></i>
+                Entrega e conferência bloqueadas enquanto houver itens faltosos.
+                @if($podeRetirarFaltosos)
+                    Use a área acima ou o <a href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}">pedido</a> para retirar.
+                @else
+                    Solicite ao almoxarifado com permissão «Retirar itens faltosos».
+                @endif
+            </p>
+        @elseif($podeAssinar)
             <form class="form-grid" method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/assinar') }}">
                 @csrf
                 <input type="hidden" name="etapa" value="{{ $proxima }}">

@@ -1,7 +1,7 @@
 # ROADMAP — Almoxarifado Escolar
 
 > Pacote: `buriti/i-educar-almoxarifado-escolar-package` · TR **5.7** · Prioridade **P0** · Nota **D**  
-> Alinhado a `tmp/DOC-EXECUTIVO-PE-77-2026-LAGUNA-IEDUCAR.md`
+> Alinhado a `packages/buriti/docs/laguna/DOC-EXECUTIVO-PE-77-2026-LAGUNA-IEDUCAR.md`
 
 ## Visão
 

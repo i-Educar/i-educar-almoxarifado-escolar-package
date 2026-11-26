@@ -74,6 +74,17 @@ final class MovimentoEstoque
         return ['id' => $id, 'saldo' => $novoSaldo];
     }
 
+    /** Saldo atual do catálogo, ou null se o SKU não existe no depósito. */
+    public static function saldoAtual(string $sku): ?int
+    {
+        $item = self::encontrarItem(strtoupper(trim($sku)));
+        if ($item === null) {
+            return null;
+        }
+
+        return (int) ($item['payload']['saldo'] ?? 0);
+    }
+
     /**
      * @return list<array{id:int,tipo:string,titulo:string,meta:?string,payload:array<string,mixed>,created_at:?string}>
      */

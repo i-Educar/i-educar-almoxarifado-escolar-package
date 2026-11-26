@@ -4,9 +4,9 @@ namespace iEducar\Packages\BuritiAlmoxarifadoEscolar\Support;
 
 final class Identidade
 {
-    public const COR = '#6b5b4a';
-    public const DESTAQUE = '#8a7460';
-    public const COR_CLARA = '#f0ebe4';
+    public const COR = '#4a5a6a';
+    public const DESTAQUE = '#6b7c8f';
+    public const COR_CLARA = '#eef1f5';
     public const ICONE = 'fa-cubes';
     public const NOME = 'Almoxarifado';
 
