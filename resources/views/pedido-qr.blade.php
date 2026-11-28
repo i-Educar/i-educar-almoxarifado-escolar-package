@@ -19,6 +19,16 @@
 @endsection
 
 @section('conteudo')
+    @if(!empty($acabouDeMarcarTransito))
+        <div class="bloco" style="border-top-color:#0b6e4f;background:linear-gradient(135deg,#e8f6f1 0%,#fff 55%);margin-bottom:12px">
+            <h2 style="color:#0b6e4f;margin:0 0 6px"><i class="fa fa-exchange"></i> Remessa registrada — Em trânsito</h2>
+            <p style="margin:0;color:var(--suave);font-size:.9rem">
+                O pedido foi marcado como <strong>Em trânsito</strong> e o solicitante foi notificado.
+                Se outra aba ainda mostrar «separar o material», atualize a página.
+            </p>
+        </div>
+    @endif
+
     <p style="font-size:.85rem;color:var(--suave,#5b6b76);max-width:42rem;margin:0 0 14px;">
         Confirmação de recebimento exige usuário <strong>logado</strong> com permissão da etapa
         <strong>Entrega</strong>. No APP:

@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <title>@yield('titulo', 'Almoxarifado')</title>
     <link rel="stylesheet" href="{{ url('/intranet/styles/font-awesome.css') }}">
     <style>
@@ -244,6 +246,16 @@
             opt.hidden = q !== '' && hay.indexOf(q) === -1;
         });
     });
+})();
+</script>
+<script>
+(function () {
+  // Safari/iOS: volta da remessa/QR via bfcache e mantém "Próximo passo" velho.
+  window.addEventListener('pageshow', function (ev) {
+    if (ev.persisted) {
+      window.location.reload();
+    }
+  });
 })();
 </script>
 </body>

@@ -18,6 +18,7 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado;
 use iEducar\Packages\BuritiLagunaAmbiente\Support\AuditoriaFluxo;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
@@ -708,7 +709,7 @@ class AlmoxarifadoController extends Controller
             ->with('ok', 'Carrinho #'.$aberto['id'].' aberto para o setor '.$setor.' — adicione itens disponíveis.');
     }
 
-    public function verPedido(int $id): View|RedirectResponse
+    public function verPedido(int $id): Response|RedirectResponse
     {
         try {
             $pedido = PedidoCarrinho::obter($id);
@@ -752,7 +753,7 @@ class AlmoxarifadoController extends Controller
         $podeDeposito = PermissoesAlmoxarifado::podeOperarDeposito($user);
         $podeRemessaStatus = PedidoCarrinho::podeEmitirRemessa($payload);
 
-        return view('almoxarifado::pedido-detalhe', [
+        return $this->respostaSemCache(view('almoxarifado::pedido-detalhe', [
             'pedido' => $pedido,
             'itensCatalogo' => $disponiveis,
             'itensTodos' => $catalogo,
@@ -772,7 +773,7 @@ class AlmoxarifadoController extends Controller
             'visual' => $visual,
             'semCobertura' => $semCobertura,
             'podeResolverCobertura' => $this->podeResolverCobertura($user),
-        ]);
+        ]));
     }
 
     public function resolverCobertura(Request $request, int $id): RedirectResponse
@@ -1001,7 +1002,7 @@ class AlmoxarifadoController extends Controller
             ->with('ok', "Pedido #{$id} solicitado. Emita a nota e colete as assinaturas (aceite → separação → entrega → conferência).");
     }
 
-    public function qrPedido(int $id): View|RedirectResponse
+    public function qrPedido(int $id): Response|RedirectResponse
     {
         try {
             $pedido = PedidoCarrinho::obter($id);
@@ -1023,16 +1024,28 @@ class AlmoxarifadoController extends Controller
             return redirect('/almoxarifado-escolar/pedidos/'.$id)->with('erro', $msg);
         }
 
+        // Mesmo preparo do POST /em-transito: fecha Separado antes da remessa/QR.
         try {
+            $status = PedidoCarrinho::normalizarStatus((string) ($p['status'] ?? ''));
+            if ($status !== PedidoCarrinho::STATUS_SEPARADO
+                && empty($p['separado_em'])
+                && ! PedidoCarrinho::emTransito($p)
+                && ! empty($p['assinaturas']['aceite'])
+            ) {
+                $dados = PermissoesAlmoxarifado::dadosUsuarioLogado();
+                PedidoCarrinho::marcarSeparado($id, $dados['nome'] ?? null);
+            }
             $emit = QrCodeRemessa::emitir($id);
+            $pedido = PedidoCarrinho::obter($id);
         } catch (Throwable $e) {
             return redirect('/almoxarifado-escolar/pedidos/'.$id)->with('erro', $e->getMessage());
         }
 
-        return view('almoxarifado::pedido-qr', [
+        return $this->respostaSemCache(view('almoxarifado::pedido-qr', [
             'pedido' => $pedido,
             'emit' => $emit,
-        ]);
+            'acabouDeMarcarTransito' => PedidoCarrinho::emTransito($pedido['payload'] ?? []),
+        ]));
     }
 
     public function etiquetasPedido(int $id): View|RedirectResponse
@@ -1110,7 +1123,7 @@ class AlmoxarifadoController extends Controller
         return redirect($destino)->with('ok', 'Recebimento confirmado via QR Code (assinatura de entrega).');
     }
 
-    public function notaPedido(int $id): View|RedirectResponse
+    public function notaPedido(int $id): Response|RedirectResponse
     {
         try {
             $pedido = PedidoCarrinho::obter($id);
@@ -1157,7 +1170,7 @@ class AlmoxarifadoController extends Controller
             && PermissoesAlmoxarifado::podeAssinar($usuario, $proxima);
         $visual = PedidoCarrinho::visualStatus((string) ($p['status'] ?? ''), $p);
 
-        return view('almoxarifado::pedido-nota', [
+        return $this->respostaSemCache(view('almoxarifado::pedido-nota', [
             'pedido' => $pedido,
             'municipio' => (string) (
                 config('legacy.config.ieducar_entity_name')
@@ -1187,7 +1200,7 @@ class AlmoxarifadoController extends Controller
                 && ! $finalizado
                 && ! PedidoCarrinho::bloqueiaEntrega($p),
             'visual' => $visual,
-        ]);
+        ]));
     }
 
     public function exportarNotaPedido(int $id): \Symfony\Component\HttpFoundation\Response|RedirectResponse
@@ -1979,4 +1992,16 @@ class AlmoxarifadoController extends Controller
             return (string) $valor;
         }
     }
+
+    /** Evita bfcache no celular com "próximo passo" desatualizado. */
+    private function respostaSemCache(View $view): Response
+    {
+        return response()
+            ->view($view->name(), $view->getData())
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
+    }
+
+
 }
