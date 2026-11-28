@@ -12,10 +12,10 @@
     · código {{ $emit['codigo'] }}
 @endsection
 @section('acoes-topo')
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}"><i class="fa fa-arrow-left"></i> Pedido</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}"><i class="fa fa-file-text-o"></i> Nota</a>
-    <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}"><i class="fa fa-tags"></i> Emitir etiquetas</a>
-    <button class="botao claro" type="button" onclick="window.print()"><i class="fa fa-print"></i> Imprimir</button>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}" title="Pedido" aria-label="Pedido"><i aria-hidden="true" class="fa fa-arrow-left"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}" title="Nota" aria-label="Nota"><i aria-hidden="true" class="fa fa-file-text-o"></i></a>
+    <a class="botao icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}" title="Emitir etiquetas" aria-label="Emitir etiquetas"><i aria-hidden="true" class="fa fa-tags"></i></a>
+    <button class="botao claro icone" type="button" onclick="window.print()" title="Imprimir" aria-label="Imprimir"><i aria-hidden="true" class="fa fa-print"></i></button>
 @endsection
 
 @section('conteudo')

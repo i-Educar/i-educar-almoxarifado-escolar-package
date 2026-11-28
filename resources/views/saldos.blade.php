@@ -51,14 +51,10 @@
     Depósito central e material nas escolas. Filtre o estoque e emita o balanço operacional do período.
 @endsection
 @section('acoes-topo')
-    <a class="botao" href="{{ url('/almoxarifado-escolar/saldos/balanco?'.$queryBalanco) }}">
-        <i class="fa fa-pie-chart"></i> Balanço
-    </a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/saldos/balanco/pdf?'.$queryBalanco) }}">
-        <i class="fa fa-file-pdf-o"></i> Emitir balanço
-    </a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/movimentos') }}"><i class="fa fa-exchange"></i> Movimentos</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos') }}"><i class="fa fa-shopping-cart"></i> Pedidos</a>
+    <a class="botao icone" href="{{ url('/almoxarifado-escolar/saldos/balanco?'.$queryBalanco) }}" title="Balanço" aria-label="Balanço"><i aria-hidden="true" class="fa fa-pie-chart"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/saldos/balanco/pdf?'.$queryBalanco) }}" title="Emitir balanço" aria-label="Emitir balanço"><i aria-hidden="true" class="fa fa-file-pdf-o"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/movimentos') }}" title="Movimentos" aria-label="Movimentos"><i aria-hidden="true" class="fa fa-exchange"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos') }}" title="Pedidos" aria-label="Pedidos"><i aria-hidden="true" class="fa fa-shopping-cart"></i></a>
 @endsection
 
 @section('foco')

@@ -22,9 +22,9 @@
             'tituloModal' => 'Download — Movimentos',
         ])
     @endif
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/itens') }}"><i class="fa fa-cube"></i> Catálogo</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos') }}"><i class="fa fa-shopping-cart"></i> Pedidos</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/saldos') }}"><i class="fa fa-bar-chart"></i> Saldos</a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/itens') }}" title="Catálogo" aria-label="Catálogo"><i aria-hidden="true" class="fa fa-cube"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos') }}" title="Pedidos" aria-label="Pedidos"><i aria-hidden="true" class="fa fa-shopping-cart"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/saldos') }}" title="Saldos" aria-label="Saldos"><i aria-hidden="true" class="fa fa-bar-chart"></i></a>
 @endsection
 
 @section('foco')

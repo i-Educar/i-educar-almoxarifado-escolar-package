@@ -6,8 +6,8 @@
 @section('lead', 'Registre a compra e confira a entrada no depósito. O pedido novo nasce depois dessa conferência — não dá para marcar como entregue daqui.')
 
 @section('acoes-topo')
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos') }}"><i class="fa fa-shopping-cart"></i> Pedidos</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/itens') }}"><i class="fa fa-cube"></i> Catálogo</a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos') }}" title="Pedidos" aria-label="Pedidos"><i aria-hidden="true" class="fa fa-shopping-cart"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/itens') }}" title="Catálogo" aria-label="Catálogo"><i aria-hidden="true" class="fa fa-cube"></i></a>
 @endsection
 
 @section('conteudo')

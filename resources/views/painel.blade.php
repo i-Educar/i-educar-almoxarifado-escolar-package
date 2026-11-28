@@ -7,8 +7,8 @@
     Peça materiais, registre entradas e saídas e confira o saldo de cada escola.
 @endsection
 @section('acoes-topo')
-    <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos') }}"><i class="fa fa-shopping-cart"></i> Pedidos</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/saldos') }}"><i class="fa fa-bar-chart"></i> Saldos</a>
+    <a class="botao icone" href="{{ url('/almoxarifado-escolar/pedidos') }}" title="Pedidos" aria-label="Pedidos"><i aria-hidden="true" class="fa fa-shopping-cart"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/saldos') }}" title="Saldos" aria-label="Saldos"><i aria-hidden="true" class="fa fa-bar-chart"></i></a>
 @endsection
 
 @section('conteudo')

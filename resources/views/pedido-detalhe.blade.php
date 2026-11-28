@@ -47,13 +47,13 @@
     Controle de materiais e qualidade do ciclo de atendimento
 @endsection
 @section('acoes-topo')
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos') }}"><i class="fa fa-arrow-left"></i> Pedidos</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/alertas') }}"><i class="fa fa-bell"></i> Alertas</a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos') }}" title="Pedidos" aria-label="Pedidos"><i aria-hidden="true" class="fa fa-arrow-left"></i></a>
+    <a class="botao claro icone alerta-semaforo" href="{{ url('/almoxarifado-escolar/alertas') }}" title="Alertas de compra" aria-label="Alertas de compra"><span class="icone-semaforo" aria-hidden="true"><i></i><i></i><i></i></span></a>
     @if($status !== 'carrinho')
-        <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}"><i class="fa fa-file-text-o"></i> Nota</a>
+        <a class="botao icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}" title="Nota" aria-label="Nota"><i aria-hidden="true" class="fa fa-file-text-o"></i></a>
         @if($podeEmitirRemessa)
-            <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> QR</a>
-            <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}"><i class="fa fa-tags"></i> Etiquetas</a>
+            <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="QR" aria-label="QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
+            <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}" title="Etiquetas" aria-label="Etiquetas"><i aria-hidden="true" class="fa fa-tags"></i></a>
         @endif
     @endif
 @endsection

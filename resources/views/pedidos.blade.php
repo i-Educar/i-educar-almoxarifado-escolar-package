@@ -17,15 +17,11 @@
     <a class="botao claro icone alerta-semaforo"
        href="{{ url('/almoxarifado-escolar/alertas') }}"
        title="Alertas de compra"
-       aria-label="Alertas de compra">
-        <span class="icone-semaforo" aria-hidden="true"><i></i><i></i><i></i></span>
-    </a>
+       aria-label="Alertas de compra"><span class="icone-semaforo" aria-hidden="true"><i></i><i></i><i></i></span></a>
     <a class="botao claro icone"
        href="{{ url('/almoxarifado-escolar/movimentos') }}"
        title="Entrada/saída"
-       aria-label="Entrada/saída">
-        <i class="fa fa-exchange" aria-hidden="true"></i>
-    </a>
+       aria-label="Entrada/saída"><i class="fa fa-exchange" aria-hidden="true"></i></a>
 @endsection
 
 @section('foco')

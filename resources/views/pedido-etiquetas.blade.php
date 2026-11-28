@@ -12,9 +12,9 @@
     Imprima e cole no volume. Cada etiqueta traz QR, código e dados do pedido.
 @endsection
 @section('acoes-topo')
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> QR</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}"><i class="fa fa-arrow-left"></i> Pedido</a>
-    <button class="botao" type="button" onclick="window.print()"><i class="fa fa-print"></i> Imprimir etiquetas</button>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="QR" aria-label="QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}" title="Pedido" aria-label="Pedido"><i aria-hidden="true" class="fa fa-arrow-left"></i></a>
+    <button class="botao icone" type="button" onclick="window.print()" title="Imprimir etiquetas" aria-label="Imprimir etiquetas"><i aria-hidden="true" class="fa fa-print"></i></button>
 @endsection
 
 @section('conteudo')

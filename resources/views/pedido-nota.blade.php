@@ -25,12 +25,12 @@
     {{ $p['escola'] ?? '—' }} · {{ $visual['rotulo'] }}
 @endsection
 @section('acoes-topo')
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}"><i class="fa fa-arrow-left"></i> Pedido</a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}" title="Pedido" aria-label="Pedido"><i aria-hidden="true" class="fa fa-arrow-left"></i></a>
     @if($podeEmitirRemessa)
-        <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> QR</a>
-        <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}"><i class="fa fa-tags"></i> Etiquetas</a>
+        <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="QR" aria-label="QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
+        <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}" title="Etiquetas" aria-label="Etiquetas"><i aria-hidden="true" class="fa fa-tags"></i></a>
     @endif
-    <button class="botao claro" type="button" onclick="window.print()"><i class="fa fa-print"></i> Imprimir</button>
+    <button class="botao claro icone" type="button" onclick="window.print()" title="Imprimir" aria-label="Imprimir"><i aria-hidden="true" class="fa fa-print"></i></button>
 @endsection
 
 @section('conteudo')

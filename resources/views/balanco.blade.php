@@ -28,11 +28,9 @@
     KPIs, movimentos e entregas no período selecionado — emita o PDF institucional quando precisar registrar.
 @endsection
 @section('acoes-topo')
-    <a class="botao" href="{{ url('/almoxarifado-escolar/saldos/balanco/pdf?'.$queryPdf) }}">
-        <i class="fa fa-file-pdf-o"></i> Emitir PDF
-    </a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/saldos') }}"><i class="fa fa-bar-chart"></i> Saldos</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/movimentos') }}"><i class="fa fa-exchange"></i> Movimentos</a>
+    <a class="botao icone" href="{{ url('/almoxarifado-escolar/saldos/balanco/pdf?'.$queryPdf) }}" title="Emitir PDF" aria-label="Emitir PDF"><i aria-hidden="true" class="fa fa-file-pdf-o"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/saldos') }}" title="Saldos" aria-label="Saldos"><i aria-hidden="true" class="fa fa-bar-chart"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/movimentos') }}" title="Movimentos" aria-label="Movimentos"><i aria-hidden="true" class="fa fa-exchange"></i></a>
 @endsection
 
 @section('conteudo')

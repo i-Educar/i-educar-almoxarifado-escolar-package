@@ -7,8 +7,8 @@
     Catálogo do depósito — cadastre a foto para facilitar a identificação no pedido.
 @endsection
 @section('acoes-topo')
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar') }}"><i class="fa fa-dashboard"></i> Painel</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/saldos') }}"><i class="fa fa-bar-chart"></i> Saldos</a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar') }}" title="Painel" aria-label="Painel"><i aria-hidden="true" class="fa fa-dashboard"></i></a>
+    <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/saldos') }}" title="Saldos" aria-label="Saldos"><i aria-hidden="true" class="fa fa-bar-chart"></i></a>
 @endsection
 
 @section('conteudo')
