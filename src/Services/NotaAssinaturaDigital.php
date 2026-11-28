@@ -77,6 +77,15 @@ final class NotaAssinaturaDigital
             if ($this->adiarLibreSignNaWeb()) {
                 $assinatura['status_libresign'] = 'agendado';
                 $payload['assinaturas'][$etapa] = $assinatura;
+                // Espelha já no pedido LS existente (Aceite/Entrega) para o card do painel
+                // não depender do envio assíncrono (que pode falhar com 429).
+                $this->espelharEtapaNoPedidoLibreSignExistente(
+                    $pedidoId,
+                    $etapa,
+                    $assinatura,
+                    $responsavel,
+                    $login,
+                );
                 $this->agendarEnvioLibreSign($pedidoId, $etapa, $payload, $responsavel, $login);
 
                 return $payload;
@@ -90,6 +99,15 @@ final class NotaAssinaturaDigital
                 if (! in_array($st, ['assinado', 'completo', '3'], true)) {
                     $assinatura = $this->concluirLibreSignSePendente($assinatura);
                 }
+            } else {
+                $assinatura['status_libresign'] = $assinatura['status_libresign'] ?? 'falhou_envio';
+                $this->espelharEtapaNoPedidoLibreSignExistente(
+                    $pedidoId,
+                    $etapa,
+                    $assinatura,
+                    $responsavel,
+                    $login,
+                );
             }
         }
 
@@ -463,6 +481,129 @@ final class NotaAssinaturaDigital
     }
 
     /**
+     * Quando o LibreSign ainda não gerou pedido desta etapa (429/agendado),
+     * acrescenta o slot assinado no pedido LS mais recente da mesma nota.
+     * Assim o card do painel reconhece quem fez Conferência / Entrega.
+     *
+     * @param  array<string,mixed>  $assinatura
+     */
+    private function espelharEtapaNoPedidoLibreSignExistente(
+        int $pedidoId,
+        string $etapa,
+        array $assinatura,
+        string $responsavel,
+        ?string $login,
+    ): void {
+        if (! class_exists(\iEducar\Packages\BuritiAssinaturaDigital\Services\PedidoAssinaturaService::class)) {
+            return;
+        }
+
+        try {
+            $pedidoLsId = 0;
+            $atual = PedidoCarrinho::obter($pedidoId);
+            $p = is_array($atual['payload'] ?? null) ? $atual['payload'] : [];
+            $assin = is_array($p['assinaturas'] ?? null) ? $p['assinaturas'] : [];
+            foreach (array_reverse(self::ETAPAS) as $et) {
+                if ($et === $etapa) {
+                    continue;
+                }
+                $id = (int) ($assin[$et]['pedido_assinatura_id'] ?? 0);
+                if ($id > 0) {
+                    $pedidoLsId = $id;
+                    break;
+                }
+            }
+            if ($pedidoLsId <= 0) {
+                $row = \Illuminate\Support\Facades\DB::table('assinatura_digital.pedido')
+                    ->where('meta', 'ilike', '%"pedido_id":'.$pedidoId.'%')
+                    ->orderByDesc('id')
+                    ->first(['id']);
+                $pedidoLsId = (int) ($row->id ?? 0);
+            }
+            if ($pedidoLsId <= 0) {
+                return;
+            }
+
+            $pedidos = app(\iEducar\Packages\BuritiAssinaturaDigital\Services\PedidoAssinaturaService::class);
+            $pedido = $pedidos->obter($pedidoLsId);
+            if ($pedido === []) {
+                return;
+            }
+            $meta = is_array($pedido['meta'] ?? null) ? $pedido['meta'] : [];
+            $visuais = is_array($meta['assinaturas_visuais'] ?? null) ? $meta['assinaturas_visuais'] : [];
+            $cargo = PedidoCarrinho::rotuloEtapa($etapa);
+            $uid = (int) ($assinatura['responsavel_id'] ?? 0);
+            if ($uid <= 0 && \Illuminate\Support\Facades\Auth::id()) {
+                $uid = (int) \Illuminate\Support\Facades\Auth::id();
+            }
+            $loginSlot = $login !== null && $login !== ''
+                ? $login
+                : (isset($assinatura['login']) ? (string) $assinatura['login'] : null);
+            $quando = (string) ($assinatura['quando_raw'] ?? $assinatura['quando_iso'] ?? now()->toDateTimeString());
+
+            $jaTem = false;
+            foreach ($visuais as $i => $v) {
+                if (! is_array($v)) {
+                    continue;
+                }
+                $mesmoCargo = mb_strtolower(trim((string) ($v['cargo'] ?? ''))) === mb_strtolower($cargo);
+                $mesmoUid = $uid > 0 && (int) ($v['user_id'] ?? 0) === $uid;
+                $mesmoLogin = $loginSlot !== null
+                    && mb_strtolower(trim((string) ($v['login'] ?? ''))) === mb_strtolower($loginSlot);
+                if ($mesmoCargo || $mesmoUid || $mesmoLogin) {
+                    $visuais[$i]['signed'] = true;
+                    $visuais[$i]['status'] = 'Assinado digitalmente';
+                    $visuais[$i]['quando'] = $quando;
+                    $visuais[$i]['nome'] = $responsavel !== '' ? $responsavel : (string) ($v['nome'] ?? $cargo);
+                    $visuais[$i]['cargo'] = $cargo;
+                    if ($uid > 0) {
+                        $visuais[$i]['user_id'] = $uid;
+                    }
+                    if ($loginSlot) {
+                        $visuais[$i]['login'] = $loginSlot;
+                    }
+                    $jaTem = true;
+                    break;
+                }
+            }
+            if (! $jaTem) {
+                $visuais[] = array_filter([
+                    'nome' => $responsavel !== '' ? $responsavel : $cargo,
+                    'cargo' => $cargo,
+                    'quando' => $quando,
+                    'login' => $loginSlot,
+                    'user_id' => $uid > 0 ? $uid : null,
+                    'signed' => true,
+                    'status' => 'Assinado digitalmente',
+                    'codigo_validacao' => $assinatura['codigo_validacao'] ?? null,
+                    'url_validacao' => $assinatura['url_validacao'] ?? null,
+                ], static fn ($v) => $v !== null && $v !== '');
+            }
+
+            $meta['assinaturas_visuais'] = array_values($visuais);
+            $meta['etapa'] = $etapa;
+            $meta['etapa_rotulo'] = $cargo;
+            $meta['pedido_id'] = $pedidoId;
+            $meta['modulo_origem'] = 'almoxarifado-escolar';
+            $meta['origem'] = 'almox_nota_etapa';
+            $meta['forcar_assinatura_imediata'] = true;
+            $meta['etapas_esperadas'] = array_map(
+                static fn (string $e): string => PedidoCarrinho::rotuloEtapa($e),
+                self::ETAPAS,
+            );
+
+            \Illuminate\Support\Facades\DB::table('assinatura_digital.pedido')
+                ->where('id', $pedidoLsId)
+                ->update([
+                    'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+                    'updated_at' => now(),
+                ]);
+        } catch (Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
      * @param  array<string,mixed>  $payload
      */
     private function agendarEnvioLibreSign(
@@ -482,6 +623,22 @@ final class NotaAssinaturaDigital
                 }
                 $ls = $this->enviarLibreSignEtapa($pedidoId, $etapa, $p, $responsavel, $login);
                 if ($ls === null) {
+                    $assinatura['status_libresign'] = 'falhou_envio';
+                    $p['assinaturas'][$etapa] = $assinatura;
+                    $this->espelharEtapaNoPedidoLibreSignExistente(
+                        $pedidoId,
+                        $etapa,
+                        $assinatura,
+                        $responsavel,
+                        $login,
+                    );
+                    PocRegistro::atualizar(
+                        $pedidoId,
+                        $p,
+                        (string) ($p['escola'] ?? ''),
+                        (string) (($atual['meta'] ?? '') ?: ($p['status'] ?? 'nota')),
+                    );
+
                     return;
                 }
                 $assinatura = $this->aplicarResultadoLibreSign($assinatura, $ls, $p);
@@ -498,6 +655,28 @@ final class NotaAssinaturaDigital
                 );
             } catch (Throwable $e) {
                 report($e);
+                try {
+                    $atual = PedidoCarrinho::obter($pedidoId);
+                    $p = is_array($atual['payload'] ?? null) ? $atual['payload'] : $payload;
+                    $assinatura = is_array($p['assinaturas'][$etapa] ?? null) ? $p['assinaturas'][$etapa] : [];
+                    $assinatura['status_libresign'] = 'falhou_envio';
+                    $p['assinaturas'][$etapa] = $assinatura;
+                    $this->espelharEtapaNoPedidoLibreSignExistente(
+                        $pedidoId,
+                        $etapa,
+                        $assinatura,
+                        $responsavel,
+                        $login,
+                    );
+                    PocRegistro::atualizar(
+                        $pedidoId,
+                        $p,
+                        (string) ($p['escola'] ?? ''),
+                        (string) (($atual['meta'] ?? '') ?: ($p['status'] ?? 'nota')),
+                    );
+                } catch (Throwable) {
+                    //
+                }
             }
         };
 
