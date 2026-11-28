@@ -72,32 +72,24 @@ final class NotaAssinaturaDigital
         }
 
         if ($this->ativo() && empty($assinatura['pedido_assinatura_id'])) {
+            // Web: responde rápido e envia ao LibreSign depois da resposta HTTP.
+            // CLI/queue: sincroniza na hora.
+            if ($this->adiarLibreSignNaWeb()) {
+                $assinatura['status_libresign'] = 'agendado';
+                $payload['assinaturas'][$etapa] = $assinatura;
+                $this->agendarEnvioLibreSign($pedidoId, $etapa, $payload, $responsavel, $login);
+
+                return $payload;
+            }
+
             $ls = $this->enviarLibreSignEtapa($pedidoId, $etapa, $payload, $responsavel, $login);
             if ($ls !== null) {
-                $assinatura['pedido_assinatura_id'] = (int) ($ls['pedido']['id'] ?? 0) ?: null;
-                $assinatura['libresign_uuid'] = $ls['pedido']['libresign_uuid'] ?? null;
-                $assinatura['status_libresign'] = $ls['pedido']['status'] ?? 'aguardando';
-                // Prefere código próprio + URL do portal (verificar), não host.docker.internal.
-                $visual = $ls['assinaturas_visuais'][0] ?? null;
-                if (is_array($visual)) {
-                    if (! empty($visual['codigo_validacao'])) {
-                        $assinatura['codigo_validacao'] = $visual['codigo_validacao'];
-                    }
-                    $portal = trim((string) ($visual['url_validacao_portal'] ?? $visual['url_validacao'] ?? ''));
-                    if ($portal !== '') {
-                        $assinatura['url_validacao'] = $portal;
-                    }
-                    if (! empty($visual['url_validacao_libresign'])) {
-                        $assinatura['url_validacao_libresign'] = $visual['url_validacao_libresign'];
-                    }
+                $assinatura = $this->aplicarResultadoLibreSign($assinatura, $ls, $payload);
+                $st = mb_strtolower(trim((string) ($assinatura['status_libresign'] ?? '')));
+                // Só tenta de novo se o orquestrador não concluiu (evita 2× find/sign no LS).
+                if (! in_array($st, ['assinado', 'completo', '3'], true)) {
+                    $assinatura = $this->concluirLibreSignSePendente($assinatura);
                 }
-                if (! empty($ls['codigo_validacao']) && empty($payload['validacao']['codigo_libresign'])) {
-                    $payload['validacao']['codigo_libresign'] = $ls['codigo_validacao'];
-                    $payload['validacao']['url_libresign'] = $ls['url_validacao'] ?? null;
-                }
-
-                // Se ainda ficou "aguardando", tenta concluir agora (mesma pessoa da etapa).
-                $assinatura = $this->concluirLibreSignSePendente($assinatura);
             }
         }
 
@@ -107,15 +99,18 @@ final class NotaAssinaturaDigital
     }
 
     /**
-     * Repara notas antigas: documento + etapas já assinadas sem código/LibreSign.
+     * Reparo leve (GET da nota): só códigos locais e URL do portal — sem HTTP ao LibreSign.
+     * Reparo remoto (CLI / ?reparar=1): pode gerar PDF e sincronizar LS.
      *
      * @param  array<string,mixed>  $payload
+     * @param  array{remoto?:bool}  $opcoes
      * @return array{payload:array<string,mixed>,alterado:bool}
      */
-    public function repararSeNecessario(int $pedidoId, array $payload): array
+    public function repararSeNecessario(int $pedidoId, array $payload, array $opcoes = []): array
     {
         $antes = json_encode($payload);
         $payload = $this->garantirValidacaoDocumento($pedidoId, $payload);
+        $remoto = ! empty($opcoes['remoto']);
 
         foreach (self::ETAPAS as $etapa) {
             $a = is_array($payload['assinaturas'][$etapa] ?? null) ? $payload['assinaturas'][$etapa] : null;
@@ -123,10 +118,31 @@ final class NotaAssinaturaDigital
                 continue;
             }
 
-            $temCodigo = trim((string) ($a['codigo_validacao'] ?? '')) !== '';
-            $temPedidoLs = ! empty($a['pedido_assinatura_id']);
+            // Sempre: URL portal no lugar de docker / path LibreSign.
+            $a = $this->normalizarUrlPortalEtapa($a);
 
-            if (! $temCodigo || ! $temPedidoLs) {
+            $temCodigo = trim((string) ($a['codigo_validacao'] ?? '')) !== '';
+            if (! $temCodigo) {
+                $payload['assinaturas'][$etapa] = $a;
+                $payload = $this->aposAssinarEtapa(
+                    $pedidoId,
+                    $etapa,
+                    $payload,
+                    (string) $a['responsavel'],
+                    isset($a['login']) ? (string) $a['login'] : null,
+                );
+                // aposAssinarEtapa já agenda/envia LS; não sincroniza de novo no GET.
+                continue;
+            }
+
+            if (! $remoto) {
+                $payload['assinaturas'][$etapa] = $a;
+                continue;
+            }
+
+            $temPedidoLs = ! empty($a['pedido_assinatura_id']);
+            if (! $temPedidoLs) {
+                $payload['assinaturas'][$etapa] = $a;
                 $payload = $this->aposAssinarEtapa(
                     $pedidoId,
                     $etapa,
@@ -137,7 +153,6 @@ final class NotaAssinaturaDigital
                 $a = is_array($payload['assinaturas'][$etapa] ?? null) ? $payload['assinaturas'][$etapa] : $a;
             }
 
-            // Etapas já vinculadas ao LibreSign: conclui se ficou "aguardando" e troca URL docker → portal.
             $a = $this->sincronizarEtapaLibreSign($a, $etapa);
             $payload['assinaturas'][$etapa] = $a;
         }
@@ -411,28 +426,134 @@ final class NotaAssinaturaDigital
      * @param  array<string,mixed>  $assinatura
      * @return array<string,mixed>
      */
+    /** @param  array<string,mixed>  $assinatura */
+    private function normalizarUrlPortalEtapa(array $assinatura): array
+    {
+        $cod = trim((string) ($assinatura['codigo_validacao'] ?? ''));
+        if ($cod === '' || ! class_exists(\iEducar\Packages\BuritiAssinaturaDigital\Services\ValidacaoPublicaService::class)) {
+            return $assinatura;
+        }
+        $portal = app(\iEducar\Packages\BuritiAssinaturaDigital\Services\ValidacaoPublicaService::class)
+            ->urlPublica($cod);
+        $atual = trim((string) ($assinatura['url_validacao'] ?? ''));
+        if ($portal !== '' && (
+            $atual === ''
+            || str_contains($atual, 'host.docker.internal')
+            || str_contains($atual, '/apps/libresign/')
+        )) {
+            if ($atual !== '' && str_contains($atual, '/apps/libresign/')) {
+                $assinatura['url_validacao_libresign'] = $atual;
+            }
+            $assinatura['url_validacao'] = $portal;
+        }
+
+        return $assinatura;
+    }
+
+    private function adiarLibreSignNaWeb(): bool
+    {
+        if (! function_exists('app') || ! app()->bound('request')) {
+            return false;
+        }
+        try {
+            return ! app()->runningInConsole();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function agendarEnvioLibreSign(
+        int $pedidoId,
+        string $etapa,
+        array $payload,
+        string $responsavel,
+        ?string $login,
+    ): void {
+        $rodar = function () use ($pedidoId, $etapa, $payload, $responsavel, $login): void {
+            try {
+                $atual = PedidoCarrinho::obter($pedidoId);
+                $p = is_array($atual['payload'] ?? null) ? $atual['payload'] : $payload;
+                $assinatura = is_array($p['assinaturas'][$etapa] ?? null) ? $p['assinaturas'][$etapa] : [];
+                if (! empty($assinatura['pedido_assinatura_id'])) {
+                    return;
+                }
+                $ls = $this->enviarLibreSignEtapa($pedidoId, $etapa, $p, $responsavel, $login);
+                if ($ls === null) {
+                    return;
+                }
+                $assinatura = $this->aplicarResultadoLibreSign($assinatura, $ls, $p);
+                $st = mb_strtolower(trim((string) ($assinatura['status_libresign'] ?? '')));
+                if (! in_array($st, ['assinado', 'completo', '3'], true)) {
+                    $assinatura = $this->concluirLibreSignSePendente($assinatura);
+                }
+                $p['assinaturas'][$etapa] = $assinatura;
+                PocRegistro::atualizar(
+                    $pedidoId,
+                    $p,
+                    (string) ($p['escola'] ?? ''),
+                    (string) (($atual['meta'] ?? '') ?: ($p['status'] ?? 'nota')),
+                );
+            } catch (Throwable $e) {
+                report($e);
+            }
+        };
+
+        try {
+            if (function_exists('dispatch')) {
+                dispatch($rodar)->afterResponse();
+
+                return;
+            }
+        } catch (Throwable) {
+            //
+        }
+        try {
+            app()->terminating($rodar);
+        } catch (Throwable) {
+            $rodar();
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $assinatura
+     * @param  array<string,mixed>  $ls
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private function aplicarResultadoLibreSign(array $assinatura, array $ls, array &$payload): array
+    {
+        $assinatura['pedido_assinatura_id'] = (int) ($ls['pedido']['id'] ?? 0) ?: null;
+        $assinatura['libresign_uuid'] = $ls['pedido']['libresign_uuid'] ?? null;
+        $assinatura['status_libresign'] = $ls['pedido']['status'] ?? 'aguardando';
+        $visual = $ls['assinaturas_visuais'][0] ?? null;
+        if (is_array($visual)) {
+            if (! empty($visual['codigo_validacao'])) {
+                $assinatura['codigo_validacao'] = $visual['codigo_validacao'];
+            }
+            $portal = trim((string) ($visual['url_validacao_portal'] ?? $visual['url_validacao'] ?? ''));
+            if ($portal !== '') {
+                $assinatura['url_validacao'] = $portal;
+            }
+            if (! empty($visual['url_validacao_libresign'])) {
+                $assinatura['url_validacao_libresign'] = $visual['url_validacao_libresign'];
+            }
+        }
+        if (! empty($ls['codigo_validacao']) && empty($payload['validacao']['codigo_libresign'])) {
+            $payload['validacao']['codigo_libresign'] = $ls['codigo_validacao'];
+            $payload['validacao']['url_libresign'] = $ls['url_validacao'] ?? null;
+        }
+
+        return $assinatura;
+    }
+
     private function sincronizarEtapaLibreSign(array $assinatura, string $etapa): array
     {
         $pedidoId = (int) ($assinatura['pedido_assinatura_id'] ?? 0);
         $uuid = trim((string) ($assinatura['libresign_uuid'] ?? ''));
-        $cod = trim((string) ($assinatura['codigo_validacao'] ?? ''));
-
-        // Sempre preferir URL do portal i-Educar sob a assinatura.
-        if ($cod !== '' && class_exists(\iEducar\Packages\BuritiAssinaturaDigital\Services\ValidacaoPublicaService::class)) {
-            $portal = app(\iEducar\Packages\BuritiAssinaturaDigital\Services\ValidacaoPublicaService::class)
-                ->urlPublica($cod);
-            $atual = trim((string) ($assinatura['url_validacao'] ?? ''));
-            if ($portal !== '' && (
-                $atual === ''
-                || str_contains($atual, 'host.docker.internal')
-                || str_contains($atual, '/apps/libresign/')
-            )) {
-                if ($atual !== '' && str_contains($atual, '/apps/libresign/')) {
-                    $assinatura['url_validacao_libresign'] = $atual;
-                }
-                $assinatura['url_validacao'] = $portal;
-            }
-        }
+        $assinatura = $this->normalizarUrlPortalEtapa($assinatura);
 
         if ($pedidoId <= 0 || $uuid === '') {
             return $assinatura;

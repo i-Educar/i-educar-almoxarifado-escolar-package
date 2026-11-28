@@ -1118,9 +1118,14 @@ class AlmoxarifadoController extends Controller
             return redirect('/almoxarifado-escolar/pedidos')->with('erro', $e->getMessage());
         }
 
-        // Pedidos antigos: gera códigos de autenticidade e LibreSign faltantes.
+        // GET: só reparo leve (códigos/URL locais). LibreSign remoto só com ?reparar=1 (admin/ops).
         try {
-            $reparo = (new NotaAssinaturaDigital())->repararSeNecessario($id, $pedido['payload']);
+            $remoto = request()->boolean('reparar');
+            $reparo = (new NotaAssinaturaDigital())->repararSeNecessario(
+                $id,
+                $pedido['payload'],
+                ['remoto' => $remoto],
+            );
             if ($reparo['alterado']) {
                 PocRegistro::atualizar(
                     $id,
@@ -1402,8 +1407,10 @@ class AlmoxarifadoController extends Controller
             }
             if (! empty($a['pedido_assinatura_id'])) {
                 $msg .= ' LibreSign pedido #'.$a['pedido_assinatura_id'].'.';
+            } elseif (($a['status_libresign'] ?? '') === 'agendado') {
+                $msg .= ' Assinatura digital sendo registrada em segundo plano.';
             } elseif ((new NotaAssinaturaDigital())->ativo()) {
-                $msg .= ' (LibreSign não confirmou nesta etapa — verifique configuração.)';
+                $msg .= ' (LibreSign em processamento ou indisponível — a autenticidade local já vale.)';
             }
         } catch (Throwable) {
             //
