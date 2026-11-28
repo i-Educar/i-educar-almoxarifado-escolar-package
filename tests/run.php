@@ -99,6 +99,29 @@ if (is_file($root.'/artisan') && is_file($root.'/vendor/autoload.php')) {
         ],
     ]);
     $assert($proxVazio === null, 'após aceite, sem em trânsito → não libera entrega');
+    $proxSeparado = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::proximaEtapaPendente([
+        'status' => 'separado',
+        'separado_em' => '2026-01-01 09:00:00',
+        'assinaturas' => [
+            'aceite' => ['responsavel' => 'A', 'quando' => '01/01/2026'],
+        ],
+    ]);
+    $assert($proxSeparado === null, 'separado sem remessa → não libera entrega');
+    $assert(
+        \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::proximaAcaoOperacional([
+            'status' => 'separacao',
+            'assinaturas' => ['aceite' => ['responsavel' => 'A']],
+        ]) === 'marcar_separado',
+        'ação operacional: marcar separado'
+    );
+    $assert(
+        \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::proximaAcaoOperacional([
+            'status' => 'separado',
+            'separado_em' => '2026-01-01 09:00:00',
+            'assinaturas' => ['aceite' => ['responsavel' => 'A']],
+        ]) === 'emitir_remessa',
+        'ação operacional: emitir remessa'
+    );
     $proxEntrega = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::proximaEtapaPendente([
         'status' => 'em_transito',
         'em_transito_em' => '2026-01-01 10:00:00',
@@ -109,6 +132,14 @@ if (is_file($root.'/artisan') && is_file($root.'/vendor/autoload.php')) {
         ],
     ]);
     $assert($proxEntrega === 'entrega', 'em trânsito libera assinatura de entrega');
+    $assert(
+        \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::proximaAcaoOperacional([
+            'status' => 'em_transito',
+            'em_transito_em' => '2026-01-01 10:00:00',
+            'assinaturas' => ['aceite' => ['responsavel' => 'A']],
+        ]) === null,
+        'em trânsito → sem ação operacional pendente'
+    );
 } else {
     echo "  SKIP cenário Laravel (artisan/vendor ausentes)\n";
 }

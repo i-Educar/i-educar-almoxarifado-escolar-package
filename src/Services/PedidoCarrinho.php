@@ -271,15 +271,10 @@ final class PedidoCarrinho
         }
 
         // Entrega só após Em trânsito (separação operacional + remessa/QR).
-        if ($etapa === 'entrega') {
-            $emTransito = $status === self::STATUS_EM_TRANSITO
-                || ! empty($p['em_transito_em'])
-                || $status === self::STATUS_ENTREGUE;
-            if (! $emTransito) {
-                throw new RuntimeException(
-                    'Registre a separação e emita a remessa (Em trânsito) antes da assinatura de entrega.'
-                );
-            }
+        if ($etapa === 'entrega' && ! self::emTransito($p)) {
+            throw new RuntimeException(
+                'Registre a separação e marque Em trânsito (remessa) antes da assinatura de entrega.'
+            );
         }
 
         $agora = now();
@@ -743,7 +738,6 @@ final class PedidoCarrinho
         if (self::finalizado($payload)) {
             return null;
         }
-        $status = self::normalizarStatus((string) ($payload['status'] ?? ''));
         foreach (self::ETAPAS_ASSINATURA as $etapa) {
             if (! empty($payload['assinaturas'][$etapa])) {
                 continue;
@@ -752,13 +746,8 @@ final class PedidoCarrinho
                 return null;
             }
             // Entrega aguarda Em trânsito (separação / remessa são operacionais).
-            if ($etapa === 'entrega') {
-                $emTransito = $status === self::STATUS_EM_TRANSITO
-                    || ! empty($payload['em_transito_em'])
-                    || $status === self::STATUS_ENTREGUE;
-                if (! $emTransito) {
-                    return null;
-                }
+            if ($etapa === 'entrega' && ! self::emTransito($payload)) {
+                return null;
             }
 
             return $etapa;
@@ -1068,6 +1057,58 @@ final class PedidoCarrinho
         }
 
         return true;
+    }
+
+    /**
+     * Já registrou saída do depósito (Em trânsito).
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    public static function emTransito(array $payload): bool
+    {
+        $status = self::normalizarStatus((string) ($payload['status'] ?? ''));
+
+        return $status === self::STATUS_EM_TRANSITO
+            || ! empty($payload['em_transito_em'])
+            || in_array($status, [self::STATUS_ENTREGUE, self::STATUS_CONFERIDO], true);
+    }
+
+    /**
+     * Próxima ação operacional do depósito (sem assinatura formal).
+     *
+     * @param  array<string,mixed>  $payload
+     * @return 'marcar_separado'|'emitir_remessa'|null
+     */
+    public static function proximaAcaoOperacional(array $payload): ?string
+    {
+        if (self::finalizado($payload) || self::bloqueiaEntrega($payload)) {
+            return null;
+        }
+
+        $status = self::normalizarStatus((string) ($payload['status'] ?? ''));
+        if ($status === self::STATUS_CARRINHO || $status === self::STATUS_SOLICITADO) {
+            return null;
+        }
+
+        if (self::emTransito($payload)) {
+            return null;
+        }
+
+        $temAceite = ! empty($payload['assinaturas']['aceite'])
+            || in_array($status, [self::STATUS_ACEITO, self::STATUS_SEPARACAO, self::STATUS_SEPARADO], true);
+
+        if (! $temAceite) {
+            return null;
+        }
+
+        $separado = $status === self::STATUS_SEPARADO
+            || ! empty($payload['separado_em']);
+
+        if (! $separado) {
+            return 'marcar_separado';
+        }
+
+        return 'emitir_remessa';
     }
 
     /** Confirmação de recebimento (QR) — até entrega; nunca após conferido. */

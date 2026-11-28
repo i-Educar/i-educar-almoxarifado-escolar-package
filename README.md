@@ -38,7 +38,7 @@ Centraliza o ciclo de pedido de materiais: da solicitação da escola ao aceite,
 | --- | --- |
 | **i-Educar** | **2.12.x** |
 | **i-Diário** | Portabilis i-Diário (API / SSO do núcleo) |
-| Pacote | `0.2.3` |
+| Pacote | `0.2.4` |
 
 Declarado em `composer.json` → `extra.ieducar` / `extra.idiario`.
 

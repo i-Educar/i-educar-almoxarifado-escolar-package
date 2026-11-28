@@ -10,6 +10,8 @@
     $naoAtendidos = $p['itens_nao_atendidos'] ?? [];
     $finalizado = ! empty($finalizado);
     $podeEmitirRemessa = ! empty($podeEmitirRemessa);
+    $podeOperarDeposito = ! empty($podeOperarDeposito);
+    $proximaAcaoOperacional = $proximaAcaoOperacional ?? null;
     $aguardandoReposicao = $aguardandoReposicao ?? [];
     $podeGerarReposicao = ! empty($podeGerarReposicao);
     $visual = $visual ?? \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::visualStatus($status, $p);
@@ -18,6 +20,10 @@
     $assinaturas = is_array($p['assinaturas'] ?? null) ? $p['assinaturas'] : [];
     $idxStatus = array_search($statusNorm, $ordemStatus, true);
     if ($idxStatus === false) { $idxStatus = 0; }
+    $aguardandoRemessa = ! empty($assinaturas['aceite'])
+        && ! \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::emTransito($p)
+        && ! $finalizado
+        && ! $bloqueioEntrega;
     // Trilho baseado em assinaturas + status (aceite antes da separação).
     $trilhoFeito = [
         'solicitado' => $statusNorm !== 'carrinho',
@@ -51,7 +57,13 @@
     <a class="botao claro icone alerta-semaforo" href="{{ url('/almoxarifado-escolar/alertas') }}" title="Alertas de compra" aria-label="Alertas de compra"><span class="icone-semaforo" aria-hidden="true"><i></i><i></i><i></i></span></a>
     @if($status !== 'carrinho')
         <a class="botao icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}" title="Nota" aria-label="Nota"><i aria-hidden="true" class="fa fa-file-text-o"></i></a>
-        @if($podeEmitirRemessa)
+        @if($podeEmitirRemessa && $proximaAcaoOperacional === 'emitir_remessa')
+            <form method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/em-transito') }}" style="display:inline;margin:0">
+                @csrf
+                <button class="botao" type="submit" title="Marcar em trânsito e notificar" aria-label="Em trânsito"><i aria-hidden="true" class="fa fa-exchange"></i> Em trânsito</button>
+            </form>
+            <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="Remessa / QR" aria-label="Remessa / QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
+        @elseif($podeEmitirRemessa && in_array($statusNorm, ['em_transito','entregue'], true))
             <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="QR" aria-label="QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
             <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}" title="Etiquetas" aria-label="Etiquetas"><i aria-hidden="true" class="fa fa-tags"></i></a>
         @endif
@@ -174,6 +186,15 @@
                 <li class="{{ $classe }}"><i class="fa {{ $ico }}"></i>{{ $lab }}</li>
             @endforeach
         </ul>
+
+        @include('almoxarifado::partials.acoes-operacionais', [
+            'id' => $id,
+            'proximaAcaoOperacional' => $proximaAcaoOperacional,
+            'podeOperarDeposito' => $podeOperarDeposito,
+            'finalizado' => $finalizado,
+            'bloqueioEntrega' => $bloqueioEntrega,
+            'aguardandoRemessa' => $aguardandoRemessa,
+        ])
     @endif
 
     @if($finalizado)
@@ -499,15 +520,22 @@
                             —
                         @elseif($bloqueioEntrega && in_array($etapa, ['entrega', 'conferencia'], true))
                             <span style="color:#c0392b">bloqueada (faltosos pendentes)</span>
+                        @elseif($etapa === 'entrega' && $aguardandoRemessa)
+                            <span style="color:var(--ambar)">aguardando Em trânsito / remessa</span>
                         @else
                             pendente
                         @endif
                     </li>
                 @endforeach
             </ul>
-            <p style="margin:12px 0 0">
+            <p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">
                 @if($finalizado)
                     <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}"><i class="fa fa-eye"></i> Consultar nota</a>
+                @elseif($aguardandoRemessa)
+                    <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}"><i class="fa fa-file-text-o"></i> Ver nota</a>
+                    <span style="font-size:.85rem;color:var(--suave);align-self:center">
+                        Assinatura de entrega bloqueada até a remessa.
+                    </span>
                 @else
                     <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota') }}"><i class="fa fa-pencil-square-o"></i> Emitir / assinar nota</a>
                 @endif

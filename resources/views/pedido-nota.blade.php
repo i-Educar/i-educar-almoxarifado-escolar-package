@@ -26,7 +26,13 @@
 @endsection
 @section('acoes-topo')
     <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id) }}" title="Pedido" aria-label="Pedido"><i aria-hidden="true" class="fa fa-arrow-left"></i></a>
-    @if($podeEmitirRemessa)
+    @if($podeEmitirRemessa && ($proximaAcaoOperacional ?? null) === 'emitir_remessa')
+        <form method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/em-transito') }}" style="display:inline;margin:0">
+            @csrf
+            <button class="botao" type="submit" title="Marcar em trânsito e notificar"><i aria-hidden="true" class="fa fa-exchange"></i> Em trânsito</button>
+        </form>
+        <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="Remessa / QR" aria-label="Remessa / QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
+    @elseif($podeEmitirRemessa)
         <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}" title="QR" aria-label="QR"><i aria-hidden="true" class="fa fa-qrcode"></i></a>
         <a class="botao claro icone" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}" title="Etiquetas" aria-label="Etiquetas"><i aria-hidden="true" class="fa fa-tags"></i></a>
     @endif
@@ -37,7 +43,26 @@
 @php
     $corNota = (string) ($identidade['cor'] ?? '#4a5a6a');
     $entidadeNome = (string) ($municipio ?? config('app.name', 'i-Educar'));
+    $proximaAcaoOperacional = $proximaAcaoOperacional
+        ?? \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::proximaAcaoOperacional($p);
+    $aguardandoRemessa = ! empty($aguardandoRemessa)
+        || (
+            ! empty($p['assinaturas']['aceite'])
+            && ! \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::emTransito($p)
+            && ! $finalizado
+            && ! $bloqueioEntrega
+        );
 @endphp
+
+@include('almoxarifado::partials.acoes-operacionais', [
+    'id' => $id,
+    'proximaAcaoOperacional' => $proximaAcaoOperacional,
+    'podeOperarDeposito' => $podeOperarDeposito ?? false,
+    'finalizado' => $finalizado,
+    'bloqueioEntrega' => $bloqueioEntrega,
+    'aguardandoRemessa' => $aguardandoRemessa,
+])
+
 <style>
     .nota {
         --nota-cor: {{ $corNota }};
@@ -401,36 +426,15 @@
     'podeResolverCobertura' => $podeResolverCobertura ?? false,
 ])
 
-@php
-    $statusOp = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::normalizarStatus((string) $status);
-    $podeMarcarSeparado = ! $finalizado
-        && in_array($statusOp, ['aceito', 'separacao'], true)
-        && empty($bloqueioEntrega)
-        && ! empty($podeAssinarSeparacao ?? $podeOperarDeposito ?? false);
-@endphp
-@if($podeMarcarSeparado)
-    <div class="bloco" style="margin-top:14px;border-top-color:#2a6f97">
-        <h2><i class="fa fa-cubes"></i> Separação (operacional)</h2>
-        <p style="margin:0 0 10px;color:var(--suave);font-size:.85rem">
-            Sem assinatura no PDF. Marque quando o material estiver separado; em seguida emita a remessa (Em trânsito) — o solicitante será notificado.
+@if($aguardandoRemessa && ! $proxima)
+    <div class="bloco bloco-assinar" style="margin-top:14px;border-top-color:var(--ambar)">
+        <h2 style="color:var(--ambar)"><i class="fa fa-lock"></i> Entrega bloqueada</h2>
+        <p style="margin:0;color:var(--suave);font-size:.9rem">
+            Conclua a <strong>remessa / Em trânsito</strong> (painel acima ou botão no topo) antes de assinar a entrega.
+            Isso notifica quem solicitou o pedido.
         </p>
-        <form method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/marcar-separado') }}" style="display:inline-flex;gap:8px;flex-wrap:wrap">
-            @csrf
-            <button class="botao" type="submit"><i class="fa fa-check"></i> Marcar separado</button>
-            <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> Emitir remessa / QR</a>
-        </form>
     </div>
-@elseif(! $finalizado && in_array($statusOp, ['separado'], true))
-    <div class="bloco" style="margin-top:14px;border-top-color:#0b6e4f">
-        <h2><i class="fa fa-exchange"></i> Em trânsito</h2>
-        <p style="margin:0 0 10px;color:var(--suave);font-size:.85rem">
-            Material separado. Emita a remessa para registrar Em trânsito e avisar quem solicitou os itens.
-        </p>
-        <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> Emitir remessa / QR</a>
-    </div>
-@endif
-
-@if($proxima && $status !== 'carrinho' && ! $finalizado)
+@elseif($proxima && $status !== 'carrinho' && ! $finalizado)
     <div class="bloco bloco-assinar" style="margin-top:14px">
         <h2><i class="fa fa-pencil"></i> Registrar {{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloEtapa($proxima) }}</h2>
         @if($proxima === 'entrega')
@@ -455,6 +459,11 @@
                 @else
                     Solicite ao almoxarifado com permissão «Retirar itens faltosos».
                 @endif
+            </p>
+        @elseif($proxima === 'entrega' && $aguardandoRemessa)
+            <p class="flash erro" style="margin:0">
+                <i class="fa fa-ban"></i>
+                Marque Em trânsito antes de assinar a entrega.
             </p>
         @elseif($podeAssinar)
             <form class="form-grid" method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/assinar') }}">

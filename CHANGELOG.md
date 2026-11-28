@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.4] — 2026-11-28
+
+- Tela do pedido: ações de **separar** e **Em trânsito / remessa** (com notificação) no próprio detalhe — não só no rodapé da nota.
+- Botão «Marcar em trânsito e notificar» (`POST …/em-transito`); QR/etiquetas como complemento.
+- Assinatura de entrega bloqueada na UI até Em trânsito; mensagem explícita na nota e no detalhe.
+
 ## [0.2.3] — 2026-11-27
 
 - Cabeçalho de Pedidos: lead enxuto; ações só com ícone (carrinho, semáforo vermelho de alertas, entrada/saída).

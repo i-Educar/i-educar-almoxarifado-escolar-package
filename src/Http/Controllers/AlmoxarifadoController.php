@@ -749,6 +749,8 @@ class AlmoxarifadoController extends Controller
 
         $visual = PedidoCarrinho::visualStatus((string) ($payload['status'] ?? ''), $payload);
         $semCobertura = PedidoCarrinho::itensSemCobertura($payload);
+        $podeDeposito = PermissoesAlmoxarifado::podeOperarDeposito($user);
+        $podeRemessaStatus = PedidoCarrinho::podeEmitirRemessa($payload);
 
         return view('almoxarifado::pedido-detalhe', [
             'pedido' => $pedido,
@@ -760,7 +762,9 @@ class AlmoxarifadoController extends Controller
             'bloqueioEntrega' => PedidoCarrinho::bloqueiaEntrega($payload),
             'podeRetirarFaltosos' => PermissoesAlmoxarifado::podeRetirarFaltosos($user),
             'finalizado' => PedidoCarrinho::finalizado($payload),
-            'podeEmitirRemessa' => PedidoCarrinho::podeEmitirRemessa($payload),
+            'podeEmitirRemessa' => $podeRemessaStatus && $podeDeposito,
+            'podeOperarDeposito' => $podeDeposito,
+            'proximaAcaoOperacional' => PedidoCarrinho::proximaAcaoOperacional($payload),
             'aguardandoReposicao' => PedidoCarrinho::itensAguardandoReposicao($payload),
             'podeGerarReposicao' => PedidoCarrinho::finalizado($payload)
                 && PedidoCarrinho::itensAguardandoReposicao($payload) !== []
@@ -1170,7 +1174,13 @@ class AlmoxarifadoController extends Controller
             'podeAssinarSeparacao' => PermissoesAlmoxarifado::podeAssinar($usuario, 'separacao')
                 || PermissoesAlmoxarifado::podeOperarDeposito($usuario),
             'finalizado' => $finalizado,
-            'podeEmitirRemessa' => PedidoCarrinho::podeEmitirRemessa($p),
+            'podeEmitirRemessa' => PedidoCarrinho::podeEmitirRemessa($p)
+                && PermissoesAlmoxarifado::podeEmitirRemessa($usuario),
+            'proximaAcaoOperacional' => PedidoCarrinho::proximaAcaoOperacional($p),
+            'aguardandoRemessa' => ! empty($p['assinaturas']['aceite'])
+                && ! PedidoCarrinho::emTransito($p)
+                && ! $finalizado
+                && ! PedidoCarrinho::bloqueiaEntrega($p),
             'visual' => $visual,
         ]);
     }
@@ -1301,8 +1311,52 @@ class AlmoxarifadoController extends Controller
             return back()->with('erro', $e->getMessage());
         }
 
-        return redirect('/almoxarifado-escolar/pedidos/'.$id.'/nota')
-            ->with('ok', 'Separação marcada. Emita a remessa (QR) para registrar Em trânsito e avisar o solicitante.');
+        return redirect('/almoxarifado-escolar/pedidos/'.$id)
+            ->with('ok', 'Material marcado como separado. Agora registre Em trânsito (remessa) para notificar quem solicitou.');
+    }
+
+    public function marcarEmTransitoPedido(int $id): RedirectResponse
+    {
+        $usuario = PermissoesAlmoxarifado::usuarioAtual();
+        if (! PermissoesAlmoxarifado::podeEmitirRemessa($usuario)) {
+            return back()->with('erro', 'Sem permissão para marcar Em trânsito / emitir remessa.');
+        }
+
+        try {
+            $pedido = PedidoCarrinho::obter($id);
+            $p = $pedido['payload'];
+            if (! PedidoCarrinho::podeEmitirRemessa($p)) {
+                return redirect('/almoxarifado-escolar/pedidos/'.$id)
+                    ->with('erro', PedidoCarrinho::finalizado($p)
+                        ? 'Pedido conferido — remessa não se aplica.'
+                        : 'Pedido ainda em carrinho — feche e conclua o aceite antes da remessa.');
+            }
+            if (PedidoCarrinho::bloqueiaEntrega($p)) {
+                return redirect('/almoxarifado-escolar/pedidos/'.$id)
+                    ->with('erro', 'Retire os itens faltosos antes de registrar Em trânsito.');
+            }
+            if (empty($p['assinaturas']['aceite'])) {
+                return redirect('/almoxarifado-escolar/pedidos/'.$id.'/nota')
+                    ->with('erro', 'Conclua o aceite na nota antes de registrar Em trânsito.');
+            }
+
+            // Garante o passo Separado antes da remessa.
+            $status = PedidoCarrinho::normalizarStatus((string) ($p['status'] ?? ''));
+            if ($status !== PedidoCarrinho::STATUS_SEPARADO
+                && empty($p['separado_em'])
+                && ! PedidoCarrinho::emTransito($p)
+            ) {
+                $dados = PermissoesAlmoxarifado::dadosUsuarioLogado();
+                PedidoCarrinho::marcarSeparado($id, $dados['nome'] ?? null);
+            }
+
+            PedidoCarrinho::marcarEmTransito($id);
+        } catch (Throwable $e) {
+            return back()->with('erro', $e->getMessage());
+        }
+
+        return redirect('/almoxarifado-escolar/pedidos/'.$id)
+            ->with('ok', 'Pedido em trânsito. O solicitante foi notificado. Agora é possível assinar a entrega na nota.');
     }
 
     public function assinarPedido(Request $request, int $id): RedirectResponse
