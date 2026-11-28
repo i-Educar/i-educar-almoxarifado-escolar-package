@@ -4,16 +4,28 @@
 @section('icone-tela', 'fa-truck')
 @section('titulo-tela', 'Pedidos por setor')
 @section('lead')
-    Ciclo: solicitado → aceite → separação → separado → em trânsito → entregue → conferido. Assinaturas formais: Aceite, Entrega e Conferência. Finalizados ficam ocultos até você pedir para vê-los.
+    Finalizados ocultos até você pedi-los · assinaturas: Aceite, Entrega e Conferência
 @endsection
 @section('acoes-topo')
-    <button type="button" class="botao primaria {{ empty($podeCarrinhoSetor) ? 'buriti-acao-bloqueada' : '' }}"
+    <button type="button"
+            class="botao icone primaria {{ empty($podeCarrinhoSetor) ? 'buriti-acao-bloqueada' : '' }}"
             data-buriti-modal="modal-novo-pedido"
-            @if(empty($podeCarrinhoSetor)) title="Sem permissão — veja o aviso" @endif>
-        <i class="fa {{ empty($podeCarrinhoSetor) ? 'fa-lock' : 'fa-plus' }}"></i> Abrir carrinho
+            title="{{ empty($podeCarrinhoSetor) ? 'Sem permissão para abrir carrinho' : 'Abrir carrinho' }}"
+            aria-label="{{ empty($podeCarrinhoSetor) ? 'Sem permissão para abrir carrinho' : 'Abrir carrinho' }}">
+        <i class="fa {{ empty($podeCarrinhoSetor) ? 'fa-lock' : 'fa-shopping-cart' }}" aria-hidden="true"></i>
     </button>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/alertas') }}"><i class="fa fa-bell"></i> Alertas</a>
-    <a class="botao claro" href="{{ url('/almoxarifado-escolar/movimentos') }}"><i class="fa fa-exchange"></i> Entrada/saída</a>
+    <a class="botao claro icone alerta-semaforo"
+       href="{{ url('/almoxarifado-escolar/alertas') }}"
+       title="Alertas de compra"
+       aria-label="Alertas de compra">
+        <span class="icone-semaforo" aria-hidden="true"><i></i><i></i><i></i></span>
+    </a>
+    <a class="botao claro icone"
+       href="{{ url('/almoxarifado-escolar/movimentos') }}"
+       title="Entrada/saída"
+       aria-label="Entrada/saída">
+        <i class="fa fa-exchange" aria-hidden="true"></i>
+    </a>
 @endsection
 
 @section('foco')
@@ -40,7 +52,7 @@
         @elseif($qAbertos > 0)
             Foque no que ainda precisa de ação. Finalizados: {{ (int) ($totais['finalizados'] ?? 0) }} (ocultos por padrão).
         @else
-            Use <strong>Abrir carrinho</strong> para solicitar itens disponíveis ao setor.
+            Use o ícone do carrinho para solicitar itens disponíveis ao setor.
         @endif
     </p>
 </section>

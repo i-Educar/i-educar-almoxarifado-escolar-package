@@ -37,18 +37,33 @@
         .topo { position: sticky; top: 0; z-index: 10; min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; background: color-mix(in srgb,#fff 90%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--linha); }
         .migalha { margin: 0; color: var(--suave); font-size: 13px; } .migalha a { color: var(--cor); font-weight: 700; text-decoration: none; }
         main { padding: 18px 20px 28px; flex: 1; }
-        .cabeca-tela { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -18px -20px 16px; padding: 14px 16px 14px 20px;
+        .cabeca-tela { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -18px -20px 16px; padding: 14px 16px 14px 20px;
             background: linear-gradient(120deg, color-mix(in srgb, var(--clara) 70%, var(--mix-branco, #fff)), var(--superficie, #fff) 55%); border-bottom: 1px solid var(--linha); border-left: 4px solid var(--cor-tela); }
-        .identidade-tela { display: flex; align-items: center; gap: 12px; }
-        .marca-tela { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(145deg, var(--destaque), var(--cor-tela)); color: #fff; font-size: 18px; box-shadow: 0 10px 20px color-mix(in srgb, var(--cor-tela) 28%, transparent); }
+        .identidade-tela { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
+        .marca-tela { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(145deg, var(--destaque), var(--cor-tela)); color: #fff; font-size: 18px; box-shadow: 0 10px 20px color-mix(in srgb, var(--cor-tela) 28%, transparent); flex: none; }
         .cabeca-tela h1 { margin: 0; font-size: 1.25rem; }
 
         .titulo-modulo { margin: 0 0 2px; font-size: .7rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--cor-tela); }
-        .cabeca-tela .acoes-tela { margin-left: auto; }
-        .cabeca-tela .lead { margin: 2px 0 0; color: var(--suave); }
-        .acoes-tela { display: flex; flex-wrap: wrap; gap: 8px; }
-        .botao { display: inline-flex; align-items: center; gap: 8px; background: var(--cor-tela); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font: inherit; text-decoration: none; cursor: pointer; }
+        .cabeca-tela .acoes-tela { margin-left: auto; flex: none; }
+        .cabeca-tela .lead { margin: 2px 0 0; color: var(--suave); font-size: .82rem; line-height: 1.35; max-width: 42rem; }
+        .acoes-tela { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+        .botao { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--cor-tela); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font: inherit; text-decoration: none; cursor: pointer; }
         .botao.claro { background: var(--superficie, #fff); color: var(--cor-tela); border: 1px solid color-mix(in srgb, var(--cor-tela) 35%, var(--linha)); }
+        .botao.icone { width: 40px; height: 40px; padding: 0; gap: 0; flex: none; }
+        .botao.icone i { font-size: 1.05rem; line-height: 1; }
+        .botao.alerta-semaforo { color: #b42318; border-color: color-mix(in srgb, #b42318 35%, var(--linha)); }
+        .botao.alerta-semaforo:hover { background: #fdeceb; }
+        .icone-semaforo {
+            display: inline-grid; gap: 2px; place-items: center; width: 14px; padding: 3px 2px;
+            border-radius: 5px; background: #1f2933; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+        }
+        .icone-semaforo i {
+            width: 7px; height: 7px; border-radius: 50%; display: block;
+            background: #4b5563; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+        }
+        .icone-semaforo i:nth-child(1) { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,.75); }
+        .icone-semaforo i:nth-child(2) { background: #6b7280; }
+        .icone-semaforo i:nth-child(3) { background: #4b5563; }
         .flash { border-radius: 12px; padding: 12px 14px; margin: 0 0 16px; } .flash.ok { background: var(--ok-fundo); color: var(--ok); } .flash.erro { background: var(--erro-fundo); color: var(--erro); }
         .bloco { background: var(--superficie, #fff); border: 1px solid var(--linha); border-radius: 14px; padding: 14px 16px; margin: 0 0 12px; border-top: 3px solid var(--cor-tela); box-shadow: 0 10px 24px rgba(21,34,43,.04); }
         .bloco h2 { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; font-size: 1.05rem; }

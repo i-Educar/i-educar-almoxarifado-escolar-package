@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.3] — 2026-11-27
+
+- Cabeçalho de Pedidos: lead enxuto; ações só com ícone (carrinho, semáforo vermelho de alertas, entrada/saída).
+
 ## [0.2.2] — 2026-11-27
 
 - Ciclo operacional alinhado: solicitado → aceite → separação → separado → em trânsito → entregue → conferido.
