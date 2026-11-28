@@ -20,6 +20,13 @@ class QrCodeRemessa
      */
     public static function emitir(int $pedidoId): array
     {
+        // Remessa = material em deslocamento.
+        try {
+            PedidoCarrinho::marcarEmTransito($pedidoId);
+        } catch (Throwable) {
+            //
+        }
+
         $pedido = PedidoCarrinho::obter($pedidoId);
         $p = $pedido['payload'];
         $token = trim((string) ($p['qr_token'] ?? ''));
@@ -39,12 +46,26 @@ class QrCodeRemessa
         self::armazenarToken($token, $pedidoId);
 
         $url = url('/almoxarifado-escolar/confirmar-recebimento/'.$token);
+        $apiPath = '/api/apps/v1/equipe/almox/confirmar';
+        // QR / APP: payload canônico da API (status = assinatura de entrega).
+        $payloadScan = [
+            'tipo' => 'almox_confirmar_recebimento',
+            'pedido_id' => $pedidoId,
+            'token' => $token,
+            'endpoint' => $apiPath,
+            'metodo' => 'POST',
+            'permissao' => 'almoxarifado.permissoes.assinaturas.entrega',
+            'web_url' => $url,
+        ];
 
         return [
             'pedido_id' => $pedidoId,
             'token' => $token,
             'codigo' => strtoupper(substr($token, 0, 4).'-'.substr($token, 4, 4).'-'.substr($token, 8, 4)),
             'url' => $url,
+            'api_path' => $apiPath,
+            'api_method' => 'POST',
+            'payload_scan' => $payloadScan,
             'escola' => (string) ($p['escola'] ?? '—'),
             'status' => (string) ($p['status'] ?? ''),
             'itens' => count($p['itens'] ?? []),
@@ -124,6 +145,13 @@ class QrCodeRemessa
         }
 
         $usuarioId = $usuarioId ?? (Auth::id() ? (int) Auth::id() : null);
+        if ($usuarioId === null || $usuarioId < 1) {
+            return false;
+        }
+        // QR faz o papel da assinatura de entrega: só quem tem permissão da etapa.
+        if (! self::usuarioPodeConfirmarEntrega($usuarioId)) {
+            return false;
+        }
         $ok = false;
 
         if (Schema::hasTable('almoxarifado.remessas')) {
@@ -235,12 +263,23 @@ class QrCodeRemessa
                 'responsavel' => $nome,
                 'responsavel_id' => $usuarioId,
                 'login' => $login,
-                'observacao' => 'Confirmado via QR Code',
+                'observacao' => 'Confirmado via QR Code / API',
                 'quando' => $agora->format('d/m/Y H:i:s'),
                 'quando_iso' => $agora->toIso8601String(),
                 'quando_raw' => $agora->toDateTimeString(),
                 'via' => 'qrcode',
             ];
+            try {
+                $p = (new NotaAssinaturaDigital())->aposAssinarEtapa(
+                    $pedidoId,
+                    'entrega',
+                    $p,
+                    $nome,
+                    $login,
+                );
+            } catch (Throwable $e) {
+                report($e);
+            }
         }
 
         if (empty($p['baixa_estoque'])) {
@@ -268,12 +307,41 @@ class QrCodeRemessa
             }
         }
 
-        return PocRegistro::atualizar(
+        $ok = PocRegistro::atualizar(
             $pedidoId,
             $p,
             (string) ($p['escola'] ?? ''),
             $p['status'].' · '.count($p['itens'] ?? []).' item(ns) · QR',
         );
+        if ($ok) {
+            $proxima = PedidoCarrinho::proximaEtapaPendente($p);
+            if ($proxima !== null) {
+                PedidoCarrinho::notificarEtapaPendente($pedidoId, $proxima, $p);
+            }
+        }
+
+        return $ok;
+    }
+
+    private static function usuarioPodeConfirmarEntrega(int $usuarioId): bool
+    {
+        if (! class_exists(\iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::class)) {
+            return false;
+        }
+        try {
+            $user = Auth::user();
+            if ($user instanceof \App\User && (int) $user->getAuthIdentifier() === $usuarioId) {
+                return \iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::podeAssinar($user, 'entrega');
+            }
+            $user = \App\User::query()->find($usuarioId);
+            if (! $user instanceof \App\User) {
+                return false;
+            }
+
+            return \iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::podeAssinar($user, 'entrega');
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private static function armazenarToken(string $token, int $pedidoId): void

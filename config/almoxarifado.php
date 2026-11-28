@@ -80,23 +80,29 @@ return [
             ],
         ],
 
+        /*
+        | Ciclo: solicitado → aceite → separação → separado → em trânsito → entregue → conferido
+        | Assinaturas formais (PDF/verificação): aceite, entrega, conferência.
+        | Separação = operacional (permissão ainda usada para marcar separado / depósito).
+        | Em trânsito = remessa/QR (notifica o solicitante; não aparece na verificação).
+        */
         'assinaturas' => [
-            // Separação no depósito — tipicamente SME / institucional
+            // Aceite da solicitação no depósito (antes da separação)
+            'aceite' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) env('ALMOXARIFADO_ASSINA_ACEITE', 'admin,institucional'))
+            ))),
+            // Separação operacional no depósito (não gera assinatura no PDF)
             'separacao' => array_values(array_filter(array_map(
                 'trim',
                 explode(',', (string) env('ALMOXARIFADO_ASSINA_SEPARACAO', 'admin,institucional'))
             ))),
-            // Aceite da escola
-            'aceite' => array_values(array_filter(array_map(
-                'trim',
-                explode(',', (string) env('ALMOXARIFADO_ASSINA_ACEITE', 'admin,institucional,escolar'))
-            ))),
-            // Entrega (dispara baixa de estoque)
+            // Entrega / baixa de estoque (após Em trânsito)
             'entrega' => array_values(array_filter(array_map(
                 'trim',
                 explode(',', (string) env('ALMOXARIFADO_ASSINA_ENTREGA', 'admin,institucional,escolar'))
             ))),
-            // Conferência final
+            // Conferência final (= pedido finalizado)
             'conferencia' => array_values(array_filter(array_map(
                 'trim',
                 explode(',', (string) env('ALMOXARIFADO_ASSINA_CONFERENCIA', 'admin,institucional,escolar'))

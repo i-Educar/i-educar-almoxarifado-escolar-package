@@ -7,7 +7,12 @@ Route::prefix('almoxarifado-escolar')->group(function (): void {
     Route::get('/', [AlmoxarifadoController::class, 'index']);
     Route::get('/itens', [AlmoxarifadoController::class, 'itens']);
     Route::post('/itens', [AlmoxarifadoController::class, 'salvarItem']);
+    Route::post('/itens/{id}/foto', [AlmoxarifadoController::class, 'atualizarFotoItem'])->whereNumber('id');
+    Route::post('/itens/{id}/foto/remover', [AlmoxarifadoController::class, 'removerFotoItem'])->whereNumber('id');
+    Route::get('/itens/foto', [AlmoxarifadoController::class, 'servirFotoItem']);
     Route::get('/saldos', [AlmoxarifadoController::class, 'saldos']);
+    Route::get('/saldos/balanco', [AlmoxarifadoController::class, 'balanco']);
+    Route::get('/saldos/balanco/pdf', [AlmoxarifadoController::class, 'exportarBalanco']);
 
     Route::get('/pedidos', [AlmoxarifadoController::class, 'pedidos']);
     Route::post('/pedidos', [AlmoxarifadoController::class, 'abrirPedido']);
@@ -21,6 +26,7 @@ Route::prefix('almoxarifado-escolar')->group(function (): void {
     Route::get('/pedidos/{id}/qr', [AlmoxarifadoController::class, 'qrPedido'])->whereNumber('id');
     Route::get('/pedidos/{id}/etiquetas', [AlmoxarifadoController::class, 'etiquetasPedido'])->whereNumber('id');
     Route::post('/pedidos/{id}/assinar', [AlmoxarifadoController::class, 'assinarPedido'])->whereNumber('id');
+    Route::post('/pedidos/{id}/marcar-separado', [AlmoxarifadoController::class, 'marcarSeparadoPedido'])->whereNumber('id');
     Route::post('/pedidos/{id}/retirar-faltoso', [AlmoxarifadoController::class, 'retirarFaltoso'])->whereNumber('id');
     Route::post('/pedidos/{id}/cobertura', [AlmoxarifadoController::class, 'resolverCobertura'])->whereNumber('id');
     Route::post('/pedidos/{id}/pedido-reposicao', [AlmoxarifadoController::class, 'gerarPedidoReposicao'])->whereNumber('id');

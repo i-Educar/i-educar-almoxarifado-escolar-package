@@ -2,12 +2,19 @@
 
 namespace iEducar\Packages\BuritiAlmoxarifadoEscolar\Http\Controllers;
 
+use Dompdf\Dompdf;
+use Dompdf\Options;
+use iEducar\Packages\AdvancedReports\Services\PdfRenderService;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\AlertaCompra;
+use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\BalancoAlmoxarifado;
+use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\ItemFoto;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\MovimentoEstoque;
+use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\NotaAssinaturaDigital;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PocRegistro;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\QrCodeRemessa;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\SaldoRede;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado;
 use iEducar\Packages\BuritiLagunaAmbiente\Support\AuditoriaFluxo;
 use Illuminate\Http\RedirectResponse;
@@ -109,23 +116,36 @@ class AlmoxarifadoController extends Controller
 
     public function itens(): View
     {
+        $this->garantirCatalogo();
         $linhas = [];
         foreach ($this->carregarItens() as $i) {
             $critico = $this->critico($i);
             $linhas[] = [
+                'id' => (int) ($i['id'] ?? 0),
+                'sku' => $i['sku'],
                 'titulo' => $i['titulo'],
                 'meta' => 'SKU '.$i['sku'],
                 'badge' => $i['saldo'].' un.',
                 'badge_tom' => $critico ? 'fail' : 'ok',
                 'corpo' => 'Mínimo operacional: '.$i['minimo'],
+                'foto' => $i['foto'] ?? null,
+                'foto_url' => $i['foto_url'] ?? null,
+                'saldo' => (int) ($i['saldo'] ?? 0),
+                'minimo' => (int) ($i['minimo'] ?? 0),
             ];
         }
 
-        return view('almoxarifado::itens', compact('linhas'));
+        return view('almoxarifado::itens', [
+            'linhas' => $linhas,
+            'podeOperarDeposito' => PermissoesAlmoxarifado::podeOperarDeposito(),
+        ]);
     }
 
     public function salvarItem(Request $request): RedirectResponse
     {
+        if (! PermissoesAlmoxarifado::podeOperarDeposito()) {
+            return back()->with('erro', 'Sem permissão para cadastrar itens do depósito (perfil de operação do almoxarifado).');
+        }
         if (! PocRegistro::disponivel()) {
             return back()->with('erro', 'Schema almoxarifado.poc_registro ausente.');
         }
@@ -139,14 +159,91 @@ class AlmoxarifadoController extends Controller
             return back()->with('erro', 'SKU e título são obrigatórios.');
         }
 
-        PocRegistro::gravar('item', $titulo, 'SKU '.$sku, [
+        $foto = null;
+        if ($request->hasFile('foto')) {
+            try {
+                $foto = ItemFoto::salvar($request->file('foto'), $sku);
+            } catch (Throwable $e) {
+                return back()->withInput()->with('erro', $e->getMessage());
+            }
+        }
+
+        $payload = [
             'sku' => $sku,
             'titulo' => $titulo,
             'saldo' => $saldo,
             'minimo' => $minimo,
-        ]);
+        ];
+        if ($foto !== null) {
+            $payload['foto'] = $foto;
+        }
+
+        PocRegistro::gravar('item', $titulo, 'SKU '.$sku, $payload);
 
         return redirect('/almoxarifado-escolar/itens')->with('ok', "Item {$sku} ({$titulo}) cadastrado.");
+    }
+
+    public function atualizarFotoItem(Request $request, int $id): RedirectResponse
+    {
+        if (! PermissoesAlmoxarifado::podeOperarDeposito()) {
+            return back()->with('erro', 'Sem permissão para alterar fotos do catálogo.');
+        }
+        if (! PocRegistro::disponivel()) {
+            return back()->with('erro', 'Schema almoxarifado.poc_registro ausente.');
+        }
+        $reg = PocRegistro::buscar($id);
+        if ($reg === null || ($reg['tipo'] ?? '') !== 'item') {
+            return back()->with('erro', 'Item não encontrado.');
+        }
+        if (! $request->hasFile('foto')) {
+            return back()->with('erro', 'Selecione uma foto do item.');
+        }
+
+        $p = is_array($reg['payload'] ?? null) ? $reg['payload'] : [];
+        $sku = strtoupper(trim((string) ($p['sku'] ?? 'ITEM')));
+        try {
+            $nova = ItemFoto::salvar($request->file('foto'), $sku);
+        } catch (Throwable $e) {
+            return back()->with('erro', $e->getMessage());
+        }
+
+        ItemFoto::remover(isset($p['foto']) ? (string) $p['foto'] : null);
+        $p['foto'] = $nova;
+        PocRegistro::atualizar($id, $p, (string) ($p['titulo'] ?? $reg['titulo']), 'SKU '.$sku);
+
+        return redirect('/almoxarifado-escolar/itens')->with('ok', 'Foto do item '.$sku.' atualizada.');
+    }
+
+    public function removerFotoItem(int $id): RedirectResponse
+    {
+        if (! PermissoesAlmoxarifado::podeOperarDeposito()) {
+            return back()->with('erro', 'Sem permissão para remover fotos do catálogo.');
+        }
+        $reg = PocRegistro::buscar($id);
+        if ($reg === null || ($reg['tipo'] ?? '') !== 'item') {
+            return back()->with('erro', 'Item não encontrado.');
+        }
+        $p = is_array($reg['payload'] ?? null) ? $reg['payload'] : [];
+        ItemFoto::remover(isset($p['foto']) ? (string) $p['foto'] : null);
+        unset($p['foto']);
+        $sku = strtoupper(trim((string) ($p['sku'] ?? '')));
+        PocRegistro::atualizar($id, $p, (string) ($p['titulo'] ?? $reg['titulo']), $sku !== '' ? 'SKU '.$sku : null);
+
+        return redirect('/almoxarifado-escolar/itens')->with('ok', 'Foto removida.');
+    }
+
+    public function servirFotoItem(Request $request): SymfonyResponse
+    {
+        $path = (string) $request->query('path', '');
+        $arquivo = ItemFoto::ler($path);
+        if ($arquivo === null) {
+            abort(404);
+        }
+
+        return response($arquivo['bin'], 200, [
+            'Content-Type' => $arquivo['mime'],
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
     }
 
     public function saldos(Request $request): View
@@ -154,6 +251,16 @@ class AlmoxarifadoController extends Controller
         $this->garantirCatalogo();
         $escolaFiltro = trim((string) $request->query('escola', ''));
         $busca = trim((string) $request->query('q', ''));
+        $situacao = mb_strtolower(trim((string) $request->query('situacao', 'todos')));
+        if (! in_array($situacao, ['todos', 'criticos', 'atencao', 'ok'], true)) {
+            $situacao = 'todos';
+        }
+        $periodo = mb_strtolower(trim((string) $request->query('periodo', 'mes')));
+        if (! in_array($periodo, ['7d', '30d', 'mes', 'trimestre', 'ano', 'custom'], true)) {
+            $periodo = 'mes';
+        }
+        $de = trim((string) $request->query('de', ''));
+        $ate = trim((string) $request->query('ate', ''));
         $fator = (float) config('almoxarifado.estoque_minimo_alerta', 1.0);
 
         $panorama = SaldoRede::panorama(
@@ -183,20 +290,204 @@ class AlmoxarifadoController extends Controller
             $panorama['escolas'] = $escolasFiltradas;
         }
 
-        $escolasOpcoes = $this->escolasDaRede();
-        foreach ($panorama['escolas'] as $esc) {
-            if (! in_array($esc['escola'], $escolasOpcoes, true)) {
-                $escolasOpcoes[] = $esc['escola'];
+        $totaisDep = ['todos' => 0, 'criticos' => 0, 'atencao' => 0, 'ok' => 0];
+        foreach ($panorama['deposito'] as $item) {
+            $totaisDep['todos']++;
+            if (! empty($item['critico'])) {
+                $totaisDep['criticos']++;
+            } elseif ((float) ($item['cobertura'] ?? 0) < 1.2) {
+                $totaisDep['atencao']++;
+            } else {
+                $totaisDep['ok']++;
             }
         }
+
+        if ($situacao !== 'todos') {
+            $panorama['deposito'] = array_values(array_filter(
+                $panorama['deposito'],
+                static function (array $i) use ($situacao): bool {
+                    $critico = ! empty($i['critico']);
+                    $atencao = ! $critico && (float) ($i['cobertura'] ?? 0) < 1.2;
+                    $ok = ! $critico && ! $atencao;
+
+                    return match ($situacao) {
+                        'criticos' => $critico,
+                        'atencao' => $atencao,
+                        'ok' => $ok,
+                        default => true,
+                    };
+                }
+            ));
+        }
+
+        // escolasDaRede() devolve [['cod'=>…,'nome'=>…], …]; o filtro de saldos usa só o nome.
+        $escolasOpcoes = [];
+        foreach ($this->escolasDaRede() as $esc) {
+            $nome = is_array($esc)
+                ? trim((string) ($esc['nome'] ?? ''))
+                : trim((string) $esc);
+            if ($nome !== '') {
+                $escolasOpcoes[$nome] = $nome;
+            }
+        }
+        foreach ($panorama['escolas'] as $esc) {
+            $nome = trim((string) ($esc['escola'] ?? ''));
+            if ($nome !== '') {
+                $escolasOpcoes[$nome] = $nome;
+            }
+        }
+        $escolasOpcoes = array_values($escolasOpcoes);
         sort($escolasOpcoes, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $periodoResolvido = BalancoAlmoxarifado::resolverPeriodo($periodo, $de !== '' ? $de : null, $ate !== '' ? $ate : null);
 
         return view('almoxarifado::saldos', [
             'panorama' => $panorama,
             'escolaFiltro' => $escolaFiltro,
             'busca' => $busca,
+            'situacao' => $situacao,
+            'totaisDep' => $totaisDep,
             'escolasOpcoes' => $escolasOpcoes,
+            'periodo' => $periodoResolvido['preset'],
+            'periodoRotulo' => $periodoResolvido['rotulo'],
+            'de' => $periodoResolvido['de_iso'],
+            'ate' => $periodoResolvido['ate_iso'],
+            'podeExportar' => class_exists(\iEducar\Packages\BuritiExportacaoUnificada\Services\EmissorDocumento::class)
+                || class_exists(Dompdf::class)
+                || class_exists(PdfRenderService::class),
         ]);
+    }
+
+    public function balanco(Request $request): View
+    {
+        $this->garantirCatalogo();
+        $balanco = $this->montarBalanco($request);
+
+        return view('almoxarifado::balanco', [
+            'balanco' => $balanco,
+        ]);
+    }
+
+    public function exportarBalanco(Request $request): SymfonyResponse|\Illuminate\Http\RedirectResponse
+    {
+        $this->garantirCatalogo();
+        $balanco = $this->montarBalanco($request);
+        $emitidoPor = $this->nomeUsuario();
+        $emitidoEm = now()->timezone(config('app.timezone', 'America/Sao_Paulo'))->format('d/m/Y H:i');
+        $titulo = 'Balanço do almoxarifado escolar';
+        $cor = (string) (config('exportacao.institucional.cor') ?: config('almoxarifado.cor', '#4a5a6a'));
+
+        $dadosView = [
+            'balanco' => $balanco,
+            'titulo' => $titulo,
+            'emitidoPor' => $emitidoPor,
+            'emitidoEm' => $emitidoEm,
+            'cor' => $cor,
+        ];
+
+        $bin = $this->renderizarPdfBalanco($dadosView);
+        if ($bin === null || $bin === '') {
+            // Fallback tabular via exportação unificada.
+            if (! class_exists(\iEducar\Packages\BuritiExportacaoUnificada\Services\EmissorDocumento::class)) {
+                return redirect('/almoxarifado-escolar/saldos')
+                    ->with('erro', 'Não foi possível emitir o PDF do balanço (Dompdf/exportação indisponível).');
+            }
+            $k = $balanco['kpis'] ?? [];
+            $cabecalhos = ['Indicador', 'Valor'];
+            $linhas = [
+                ['Período', (string) ($balanco['periodo']['rotulo'] ?? '')],
+                ['No depósito (un.)', (string) ($k['deposito_unidades'] ?? 0)],
+                ['Críticos', (string) ($k['criticos'] ?? 0)],
+                ['Entradas no período', (string) ($k['entradas_periodo'] ?? 0)],
+                ['Saídas no período', (string) ($k['saidas_periodo'] ?? 0)],
+                ['Pedidos no período', (string) ($k['pedidos_periodo'] ?? 0)],
+                ['Entregues no período', (string) ($k['pedidos_entregues_periodo'] ?? 0)],
+                ['Em trânsito', (string) ($k['pedidos_transito'] ?? 0)],
+            ];
+            foreach ($balanco['top_escolas'] ?? [] as $esc) {
+                $linhas[] = [
+                    'Escola · '.(string) ($esc['escola'] ?? ''),
+                    number_format((int) ($esc['unidades'] ?? 0), 0, ',', '.').' un. / '.(int) ($esc['pedidos'] ?? 0).' ped.',
+                ];
+            }
+
+            return \iEducar\Packages\BuritiExportacaoUnificada\Support\ExportacaoModulo::download(
+                $titulo,
+                $cabecalhos,
+                $linhas,
+                'Almoxarifado',
+                'pdf',
+                (string) ($balanco['periodo']['rotulo'] ?? 'Balanço operacional'),
+                $emitidoPor,
+                'almox-balanco',
+            );
+        }
+
+        $nome = 'almox-balanco-'.($balanco['periodo']['de_iso'] ?? 'inicio').'-'.($balanco['periodo']['ate_iso'] ?? 'fim').'.pdf';
+
+        return response($bin, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$nome.'"',
+        ]);
+    }
+
+    /** @return array<string,mixed> */
+    private function montarBalanco(Request $request): array
+    {
+        $periodo = mb_strtolower(trim((string) $request->query('periodo', $request->input('periodo', 'mes'))));
+        $de = trim((string) $request->query('de', $request->input('de', '')));
+        $ate = trim((string) $request->query('ate', $request->input('ate', '')));
+        $escola = trim((string) $request->query('escola', $request->input('escola', '')));
+        $q = trim((string) $request->query('q', $request->input('q', '')));
+        $fator = (float) config('almoxarifado.estoque_minimo_alerta', 1.0);
+
+        return BalancoAlmoxarifado::gerar(
+            $this->carregarItens(),
+            $periodo !== '' ? $periodo : 'mes',
+            $de !== '' ? $de : null,
+            $ate !== '' ? $ate : null,
+            $escola !== '' ? $escola : null,
+            $q,
+            $fator,
+        );
+    }
+
+    /** @param  array<string,mixed>  $dados */
+    private function renderizarPdfBalanco(array $dados): ?string
+    {
+        $view = 'almoxarifado::balanco-pdf';
+
+        if (class_exists(PdfRenderService::class)) {
+            try {
+                $bin = app(PdfRenderService::class)->renderToString($view, $dados, 'a4', 'portrait', false);
+                if (is_string($bin) && str_starts_with($bin, '%PDF') && strlen($bin) > 1500) {
+                    return $bin;
+                }
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
+        if (class_exists(Dompdf::class)) {
+            try {
+                $html = view($view, $dados)->render();
+                $options = new Options();
+                $options->set('isRemoteEnabled', true);
+                $options->set('isHtml5ParserEnabled', true);
+                $options->setChroot(base_path());
+                $dompdf = new Dompdf($options);
+                $dompdf->setPaper('a4', 'portrait');
+                $dompdf->loadHtml($html, 'UTF-8');
+                $dompdf->render();
+                $bin = (string) $dompdf->output();
+
+                return str_starts_with($bin, '%PDF') ? $bin : null;
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
+        return null;
     }
 
     public function pedidos(Request $request): View
@@ -204,12 +495,33 @@ class AlmoxarifadoController extends Controller
         $this->garantirCatalogo();
         $filtroSolicitanteId = (int) $request->query('solicitante_id', 0);
         $filtroEscola = trim((string) $request->query('escola', ''));
+        $filtroStatus = trim((string) $request->query('status', ''));
+        $filtroQ = trim((string) $request->query('q', ''));
+        $situacao = mb_strtolower(trim((string) $request->query('situacao', 'abertos')));
+        if (! in_array($situacao, ['abertos', 'finalizados', 'todos'], true)) {
+            $situacao = 'abertos';
+        }
+        $statusValidos = [
+            PedidoCarrinho::STATUS_CARRINHO,
+            PedidoCarrinho::STATUS_SOLICITADO,
+            PedidoCarrinho::STATUS_FECHADO, // legado
+            PedidoCarrinho::STATUS_ACEITO,
+            PedidoCarrinho::STATUS_SEPARACAO,
+            PedidoCarrinho::STATUS_SEPARADO,
+            PedidoCarrinho::STATUS_EM_TRANSITO,
+            PedidoCarrinho::STATUS_ENTREGUE,
+            PedidoCarrinho::STATUS_CONFERIDO,
+        ];
+        if ($filtroStatus !== '' && ! in_array($filtroStatus, $statusValidos, true)) {
+            $filtroStatus = '';
+        }
         $filtroSolicitante = '';
         if ($filtroSolicitanteId > 0) {
             $filtroSolicitante = $this->nomeUsuarioPorId($filtroSolicitanteId) ?? '';
         }
         $linhas = [];
         $carrinhos = [];
+        $totais = ['abertos' => 0, 'finalizados' => 0, 'todos' => 0];
         foreach (PocRegistro::listar('pedido', 300) as $r) {
             try {
                 $pedido = PedidoCarrinho::obter((int) $r['id']);
@@ -219,7 +531,12 @@ class AlmoxarifadoController extends Controller
             $p = $pedido['payload'];
             $solicitante = (string) ($p['solicitante'] ?? '');
             $solicitanteId = (int) ($p['solicitante_id'] ?? 0);
-            if ($filtroEscola !== '' && strcasecmp((string) ($p['escola'] ?? ''), $filtroEscola) !== 0) {
+            $escola = (string) ($p['escola'] ?? '');
+            $setor = (string) ($p['setor'] ?? '');
+            $status = (string) ($p['status'] ?? PedidoCarrinho::STATUS_CARRINHO);
+            $pedidoId = (int) $r['id'];
+
+            if ($filtroEscola !== '' && strcasecmp($escola, $filtroEscola) !== 0) {
                 continue;
             }
             if ($filtroSolicitanteId > 0) {
@@ -228,18 +545,40 @@ class AlmoxarifadoController extends Controller
                     continue;
                 }
             }
+            if ($filtroStatus !== '') {
+                $statusNorm = PedidoCarrinho::normalizarStatus($status);
+                $filtroNorm = PedidoCarrinho::normalizarStatus($filtroStatus);
+                if ($statusNorm !== $filtroNorm && $status !== $filtroStatus) {
+                    continue;
+                }
+            }
+            if ($filtroQ !== '') {
+                $hay = mb_strtolower(implode(' ', [
+                    '#'.$pedidoId,
+                    (string) $pedidoId,
+                    $escola,
+                    $setor,
+                    $solicitante,
+                    $status,
+                    PedidoCarrinho::rotuloStatus($status, $p),
+                ]));
+                if (! str_contains($hay, mb_strtolower($filtroQ))) {
+                    continue;
+                }
+            }
+
             $qtdItens = count($p['itens'] ?? []);
             $qtdUn = array_sum(array_map(static fn ($i) => (int) ($i['quantidade'] ?? 0), $p['itens'] ?? []));
-            $status = (string) ($p['status'] ?? PedidoCarrinho::STATUS_CARRINHO);
-            $setor = (string) ($p['setor'] ?? '');
             $bloqueado = PedidoCarrinho::bloqueiaEntrega($p);
             $naoAtendidos = count($p['itens_nao_atendidos'] ?? []);
             $visual = PedidoCarrinho::visualStatus($status, $p);
             $aguardandoRepo = count(PedidoCarrinho::itensAguardandoReposicao($p));
+            $finalizado = (bool) $visual['finalizado'];
             $linha = [
-                'id' => (int) $r['id'],
-                'titulo' => ($p['escola'] ?? '—').($setor !== '' ? ' / '.$setor : '').' — '.$qtdItens.' item(ns)',
-                'meta' => 'Pedido #'.$r['id'].' · '.$qtdUn.' un.'.($solicitante !== '' ? ' · '.$solicitante : '')
+                'id' => $pedidoId,
+                'titulo' => ($escola !== '' ? $escola : '—').($setor !== '' ? ' / '.$setor : ''),
+                'subtitulo' => $qtdItens.' item(ns) · '.$qtdUn.' un.',
+                'meta' => ($solicitante !== '' ? $solicitante : 'Sem solicitante')
                     .($naoAtendidos > 0 ? ' · '.$naoAtendidos.' não atendido(s)' : '')
                     .(! empty($p['origem_pedido_id']) ? ' · reposição de #'.$p['origem_pedido_id'] : ''),
                 'badge' => $visual['rotulo'],
@@ -247,18 +586,45 @@ class AlmoxarifadoController extends Controller
                 'status_icone' => $visual['icone'],
                 'status_cor' => $visual['cor'],
                 'status_classe' => $visual['classe'],
-                'finalizado' => $visual['finalizado'],
+                'finalizado' => $finalizado,
                 'corpo' => 'Criado em '.$this->formatarQuando($r['created_at'] ?? null)
                     .($bloqueado ? ' · entrega bloqueada até retirar faltosos' : '')
-                    .($visual['finalizado'] && $aguardandoRepo > 0
+                    .($finalizado && $aguardandoRepo > 0
                         ? ' · '.$aguardandoRepo.' item(ns) para pedido de reposição'
                         : ''),
+                'criado_em' => $this->formatarQuando($r['created_at'] ?? null),
+                'escola' => $escola,
+                'setor' => $setor,
+                'solicitante' => $solicitante,
+                'qtd_itens' => $qtdItens,
+                'qtd_un' => $qtdUn,
                 'status' => $status,
                 'itens' => $p['itens'] ?? [],
                 'parcial' => ! empty($p['parcial']) || $bloqueado || $naoAtendidos > 0,
+                'bloqueado' => $bloqueado,
             ];
+
+            $totais['todos']++;
+            if ($finalizado) {
+                $totais['finalizados']++;
+            } else {
+                $totais['abertos']++;
+            }
+
             if ($status === PedidoCarrinho::STATUS_CARRINHO) {
                 $carrinhos[] = $linha;
+                // Carrinhos já aparecem no bloco próprio — evita duplicar na lista.
+                continue;
+            }
+
+            // Situação só restringe a lista “geral”; busca/status específicos atravessam.
+            if ($filtroStatus === '' && $filtroQ === '') {
+                if ($situacao === 'abertos' && $finalizado) {
+                    continue;
+                }
+                if ($situacao === 'finalizados' && ! $finalizado) {
+                    continue;
+                }
             }
             $linhas[] = $linha;
         }
@@ -268,6 +634,7 @@ class AlmoxarifadoController extends Controller
         return view('almoxarifado::pedidos', [
             'linhas' => $linhas,
             'carrinhos' => $carrinhos,
+            'totais' => $totais,
             'escolas' => $this->escolasDaRede(),
             'itens' => $this->carregarItens(),
             // Solicitantes: só quem pode pedir (carrinho/pedidos), com vínculo de escola no data-escolas.
@@ -275,6 +642,20 @@ class AlmoxarifadoController extends Controller
             'setores' => (array) config('almoxarifado.setores', []),
             'podeCarrinhoSetor' => PermissoesAlmoxarifado::podeCarrinhoSetor($user),
             'filtroSolicitanteId' => $filtroSolicitanteId > 0 ? $filtroSolicitanteId : null,
+            'filtroEscola' => $filtroEscola,
+            'filtroStatus' => $filtroStatus,
+            'filtroQ' => $filtroQ,
+            'situacao' => $situacao,
+            'statusOpcoes' => [
+                PedidoCarrinho::STATUS_CARRINHO => 'Carrinho',
+                PedidoCarrinho::STATUS_SOLICITADO => 'Solicitado',
+                PedidoCarrinho::STATUS_ACEITO => 'Aceite',
+                PedidoCarrinho::STATUS_SEPARACAO => 'Separação',
+                PedidoCarrinho::STATUS_SEPARADO => 'Separado',
+                PedidoCarrinho::STATUS_EM_TRANSITO => 'Em trânsito',
+                PedidoCarrinho::STATUS_ENTREGUE => 'Entregue',
+                PedidoCarrinho::STATUS_CONFERIDO => 'Conferido (finalizado)',
+            ],
         ]);
     }
 
@@ -340,6 +721,32 @@ class AlmoxarifadoController extends Controller
         $user = PermissoesAlmoxarifado::usuarioAtual();
 
         $payload = $pedido['payload'];
+        // Garante foto_url nos itens do carrinho (snapshot ou lookup no catálogo).
+        $porSku = [];
+        foreach ($catalogo as $ci) {
+            $porSku[strtoupper((string) $ci['sku'])] = $ci;
+        }
+        $itensPedido = [];
+        foreach (is_array($payload['itens'] ?? null) ? $payload['itens'] : [] as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $skuItem = strtoupper((string) ($item['sku'] ?? ''));
+            $foto = trim((string) ($item['foto'] ?? ''));
+            if ($foto === '' && isset($porSku[$skuItem]['foto'])) {
+                $foto = (string) ($porSku[$skuItem]['foto'] ?? '');
+                if ($foto !== '') {
+                    $item['foto'] = $foto;
+                }
+            }
+            $item['foto_url'] = $foto !== ''
+                ? ItemFoto::url($foto)
+                : ($porSku[$skuItem]['foto_url'] ?? null);
+            $itensPedido[] = $item;
+        }
+        $payload['itens'] = $itensPedido;
+        $pedido['payload'] = $payload;
+
         $visual = PedidoCarrinho::visualStatus((string) ($payload['status'] ?? ''), $payload);
         $semCobertura = PedidoCarrinho::itensSemCobertura($payload);
 
@@ -529,7 +936,15 @@ class AlmoxarifadoController extends Controller
                     'solicitante' => $pedido['payload']['solicitante'] ?? null,
                     'solicitante_id' => $pedido['payload']['solicitante_id'] ?? null,
                 ]);
-                PedidoCarrinho::adicionarItem($id, $sku, $titulo, $qtd, 'sem_saldo', $alertaId);
+                PedidoCarrinho::adicionarItem(
+                    $id,
+                    $sku,
+                    $titulo,
+                    $qtd,
+                    'sem_saldo',
+                    $alertaId,
+                    isset($catalogo['foto']) ? (string) $catalogo['foto'] : null,
+                );
             } catch (Throwable $e) {
                 return back()->with('erro', $e->getMessage());
             }
@@ -543,7 +958,15 @@ class AlmoxarifadoController extends Controller
         }
 
         try {
-            PedidoCarrinho::adicionarItem($id, $sku, $titulo, $qtd, 'catalogo');
+            PedidoCarrinho::adicionarItem(
+                $id,
+                $sku,
+                $titulo,
+                $qtd,
+                'catalogo',
+                null,
+                isset($catalogo['foto']) ? (string) $catalogo['foto'] : null,
+            );
         } catch (Throwable $e) {
             return back()->with('erro', $e->getMessage());
         }
@@ -571,7 +994,7 @@ class AlmoxarifadoController extends Controller
         }
 
         return redirect('/almoxarifado-escolar/pedidos/'.$id.'/nota')
-            ->with('ok', "Pedido #{$id} fechado. Emita a nota e colete as assinaturas.");
+            ->with('ok', "Pedido #{$id} solicitado. Emita a nota e colete as assinaturas (aceite → separação → entrega → conferência).");
     }
 
     public function qrPedido(int $id): View|RedirectResponse
@@ -580,6 +1003,11 @@ class AlmoxarifadoController extends Controller
             $pedido = PedidoCarrinho::obter($id);
         } catch (Throwable $e) {
             return redirect('/almoxarifado-escolar/pedidos')->with('erro', $e->getMessage());
+        }
+
+        if (! PermissoesAlmoxarifado::podeEmitirRemessa()) {
+            return redirect('/almoxarifado-escolar/pedidos/'.$id)
+                ->with('erro', 'Sem permissão para emitir remessa/QR (operação do depósito).');
         }
 
         $p = $pedido['payload'];
@@ -611,6 +1039,11 @@ class AlmoxarifadoController extends Controller
             return redirect('/almoxarifado-escolar/pedidos')->with('erro', $e->getMessage());
         }
 
+        if (! PermissoesAlmoxarifado::podeEmitirRemessa()) {
+            return redirect('/almoxarifado-escolar/pedidos/'.$id)
+                ->with('erro', 'Sem permissão para emitir etiquetas (operação do depósito).');
+        }
+
         $p = $pedido['payload'];
         if (! PedidoCarrinho::podeEmitirRemessa($p)) {
             $msg = PedidoCarrinho::finalizado($p)
@@ -634,6 +1067,15 @@ class AlmoxarifadoController extends Controller
 
     public function confirmarRecebimento(string $token): RedirectResponse
     {
+        $usuario = PermissoesAlmoxarifado::usuarioAtual();
+        if ($usuario === null) {
+            return redirect('/login')->with('erro', 'Faça login para confirmar o recebimento (QR exige usuário autenticado).');
+        }
+        if (! PermissoesAlmoxarifado::podeAssinar($usuario, 'entrega')) {
+            return redirect('/almoxarifado-escolar/pedidos')
+                ->with('erro', 'Seu perfil não tem permissão para confirmar entrega via QR (etapa Entrega).');
+        }
+
         $pedidoId = QrCodeRemessa::validarToken($token);
         if ($pedidoId) {
             try {
@@ -651,17 +1093,17 @@ class AlmoxarifadoController extends Controller
                 // segue para validação padrão do token
             }
         }
-        $ok = QrCodeRemessa::confirmarRecebimento($token, Auth::id() ? (int) Auth::id() : null);
+        $ok = QrCodeRemessa::confirmarRecebimento($token, (int) $usuario->getAuthIdentifier());
         if (! $ok) {
             return redirect('/almoxarifado-escolar/pedidos')
-                ->with('erro', 'Token inválido, expirado, pedido bloqueado (parcial) ou não encontrado.');
+                ->with('erro', 'Token inválido, expirado, pedido bloqueado (parcial) ou sem permissão.');
         }
 
         $destino = $pedidoId
             ? '/almoxarifado-escolar/pedidos/'.$pedidoId.'/nota'
             : '/almoxarifado-escolar/pedidos';
 
-        return redirect($destino)->with('ok', 'Recebimento confirmado via QR Code.');
+        return redirect($destino)->with('ok', 'Recebimento confirmado via QR Code (assinatura de entrega).');
     }
 
     public function notaPedido(int $id): View|RedirectResponse
@@ -672,15 +1114,25 @@ class AlmoxarifadoController extends Controller
             return redirect('/almoxarifado-escolar/pedidos')->with('erro', $e->getMessage());
         }
 
+        // Pedidos antigos: gera códigos de autenticidade e LibreSign faltantes.
+        try {
+            $reparo = (new NotaAssinaturaDigital())->repararSeNecessario($id, $pedido['payload']);
+            if ($reparo['alterado']) {
+                PocRegistro::atualizar(
+                    $id,
+                    $reparo['payload'],
+                    (string) ($reparo['payload']['escola'] ?? $pedido['titulo'] ?? ''),
+                    (string) ($pedido['meta'] ?? 'nota')
+                );
+                $pedido = PedidoCarrinho::obter($id);
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
+
         $etapas = PedidoCarrinho::ETAPAS_ASSINATURA;
         $p = $pedido['payload'];
-        $proxima = null;
-        foreach ($etapas as $etapa) {
-            if (empty($p['assinaturas'][$etapa])) {
-                $proxima = $etapa;
-                break;
-            }
-        }
+        $proxima = PedidoCarrinho::proximaEtapaPendente($p);
 
         $usuario = PermissoesAlmoxarifado::usuarioAtual();
         $bloqueio = PedidoCarrinho::bloqueiaEntrega($p);
@@ -714,6 +1166,9 @@ class AlmoxarifadoController extends Controller
             'semCobertura' => $semCobertura,
             'podeResolverCobertura' => $this->podeResolverCobertura($usuario),
             'podeRetirarFaltosos' => PermissoesAlmoxarifado::podeRetirarFaltosos($usuario),
+            'podeOperarDeposito' => PermissoesAlmoxarifado::podeOperarDeposito($usuario),
+            'podeAssinarSeparacao' => PermissoesAlmoxarifado::podeAssinar($usuario, 'separacao')
+                || PermissoesAlmoxarifado::podeOperarDeposito($usuario),
             'finalizado' => $finalizado,
             'podeEmitirRemessa' => PedidoCarrinho::podeEmitirRemessa($p),
             'visual' => $visual,
@@ -734,7 +1189,7 @@ class AlmoxarifadoController extends Controller
         }
 
         $p = $pedido['payload'];
-        $status = (string) ($p['status'] ?? 'fechado');
+        $status = PedidoCarrinho::normalizarStatus((string) ($p['status'] ?? PedidoCarrinho::STATUS_SOLICITADO));
         $escola = (string) ($p['escola'] ?? '—');
         $cabecalhos = ['#', 'SKU', 'Item', 'Qtd', 'Situação'];
         $linhas = [];
@@ -762,36 +1217,103 @@ class AlmoxarifadoController extends Controller
         $assinaturas = [];
         foreach (PedidoCarrinho::ETAPAS_ASSINATURA as $etapa) {
             $a = is_array($p['assinaturas'][$etapa] ?? null) ? $p['assinaturas'][$etapa] : null;
+            if ($a === null || trim((string) ($a['responsavel'] ?? '')) === '') {
+                // Slot vazio: mantém linha para assinar no papel, sem código de autenticidade.
+                $assinaturas[] = [
+                    'cargo' => PedidoCarrinho::rotuloEtapa($etapa),
+                    'nome' => '',
+                    'quando' => null,
+                ];
+                continue;
+            }
             $assinaturas[] = [
                 'cargo' => PedidoCarrinho::rotuloEtapa($etapa),
-                'nome' => (string) ($a['responsavel'] ?? ''),
+                'nome' => (string) $a['responsavel'],
                 'quando' => isset($a['quando']) ? $this->formatarQuando($a['quando'], false) : null,
+                'codigo_validacao' => $a['codigo_validacao'] ?? null,
+                'url_validacao' => $a['url_validacao'] ?? null,
+                'status' => ! empty($a['pedido_assinatura_id']) ? 'Assinatura digital registrada' : null,
             ];
         }
 
+        $solicitante = trim((string) ($p['solicitante'] ?? ''));
+        $quandoSolicBruto = $p['solicitado_em']
+            ?? $p['fechado_em']
+            ?? ($p['assinaturas']['aceite']['quando_raw'] ?? null)
+            ?? ($p['assinaturas']['aceite']['quando'] ?? null)
+            ?? ($pedido['created_at'] ?? null);
+        $quandoSolic = $quandoSolicBruto
+            ? $this->formatarQuando($quandoSolicBruto, false)
+            : '';
         $subtitulo = 'Pedido #'.$id
             .' · Escola: '.$escola
-            .' · Status: '.PedidoCarrinho::rotuloStatus($status, $p)
-            .(! empty($p['fechado_em']) ? ' · Fechado em '.$this->formatarQuando($p['fechado_em'], false) : '');
+            .' · Status: '.PedidoCarrinho::rotuloStatus($status, $p);
+        if ($solicitante !== '') {
+            $subtitulo .= "\nSolicitado por ".$solicitante
+                .($quandoSolic !== '' && $quandoSolic !== '—' ? ' · '.$quandoSolic : '');
+        } elseif (! empty($p['fechado_em'])) {
+            $subtitulo .= ' · Fechado em '.$this->formatarQuando($p['fechado_em'], false);
+        }
 
-        return \iEducar\Packages\BuritiExportacaoUnificada\Support\ExportacaoModulo::download(
-            'Nota de material — Almoxarifado',
-            $cabecalhos,
-            $linhas,
-            'Almoxarifado escolar',
-            'pdf',
-            $subtitulo,
-            $this->nomeUsuario(),
-            'almox-nota-'.$id,
-            true,
-            $assinaturas,
+        // Se já há assinaturas digitais nas etapas, não dispara LibreSign de novo no PDF.
+        $jaDigital = collect($p['assinaturas'] ?? [])->contains(
+            static fn ($a): bool => is_array($a) && ! empty($a['pedido_assinatura_id'])
         );
+        $prevLs = null;
+        if ($jaDigital) {
+            $prevLs = \Illuminate\Support\Facades\Config::get('exportacao.assinatura_digital.habilitado');
+            \Illuminate\Support\Facades\Config::set('exportacao.assinatura_digital.habilitado', false);
+        }
+
+        try {
+            return \iEducar\Packages\BuritiExportacaoUnificada\Support\ExportacaoModulo::download(
+                'Nota de material — Almoxarifado',
+                $cabecalhos,
+                $linhas,
+                'Almoxarifado escolar',
+                'pdf',
+                $subtitulo,
+                $this->nomeUsuario(),
+                'almox-nota-'.$id,
+                true,
+                $assinaturas,
+            );
+        } finally {
+            if ($prevLs !== null) {
+                \Illuminate\Support\Facades\Config::set('exportacao.assinatura_digital.habilitado', $prevLs);
+            }
+        }
+    }
+
+    public function marcarSeparadoPedido(int $id): RedirectResponse
+    {
+        $usuario = PermissoesAlmoxarifado::usuarioAtual();
+        if (! PermissoesAlmoxarifado::podeOperarDeposito($usuario)
+            && ! PermissoesAlmoxarifado::podeAssinar($usuario, 'separacao')
+        ) {
+            return back()->with('erro', 'Sem permissão para marcar a separação operacional.');
+        }
+
+        $dados = PermissoesAlmoxarifado::dadosUsuarioLogado();
+        try {
+            PedidoCarrinho::marcarSeparado($id, $dados['nome'] ?? null);
+        } catch (Throwable $e) {
+            return back()->with('erro', $e->getMessage());
+        }
+
+        return redirect('/almoxarifado-escolar/pedidos/'.$id.'/nota')
+            ->with('ok', 'Separação marcada. Emita a remessa (QR) para registrar Em trânsito e avisar o solicitante.');
     }
 
     public function assinarPedido(Request $request, int $id): RedirectResponse
     {
         $etapa = (string) $request->input('etapa', '');
         $usuario = PermissoesAlmoxarifado::usuarioAtual();
+
+        // Separação deixou de ser assinatura formal — redireciona para o fluxo operacional.
+        if ($etapa === 'separacao') {
+            return $this->marcarSeparadoPedido($id);
+        }
 
         if (! PermissoesAlmoxarifado::podeAssinar($usuario, $etapa)) {
             return back()->with('erro', 'Seu perfil não tem permissão para assinar «'
@@ -814,8 +1336,26 @@ class AlmoxarifadoController extends Controller
             return back()->with('erro', $e->getMessage());
         }
 
-        return redirect('/almoxarifado-escolar/pedidos/'.$id.'/nota')
-            ->with('ok', PedidoCarrinho::rotuloEtapa($etapa).' registrada por '.$dados['nome'].' em '.now()->format('d/m/Y H:i:s').'.');
+        $msg = PedidoCarrinho::rotuloEtapa($etapa).' registrada por '.$dados['nome'].' em '.now()->format('d/m/Y H:i:s').'.';
+        try {
+            $pedido = PedidoCarrinho::obter($id);
+            $a = $pedido['payload']['assinaturas'][$etapa] ?? [];
+            if (! empty($a['codigo_validacao'])) {
+                $msg .= ' Autenticidade da assinatura: '.$a['codigo_validacao'].'.';
+            }
+            if (! empty($pedido['payload']['validacao']['codigo'])) {
+                $msg .= ' Documento: '.$pedido['payload']['validacao']['codigo'].'.';
+            }
+            if (! empty($a['pedido_assinatura_id'])) {
+                $msg .= ' LibreSign pedido #'.$a['pedido_assinatura_id'].'.';
+            } elseif ((new NotaAssinaturaDigital())->ativo()) {
+                $msg .= ' (LibreSign não confirmou nesta etapa — verifique configuração.)';
+            }
+        } catch (Throwable) {
+            //
+        }
+
+        return redirect('/almoxarifado-escolar/pedidos/'.$id.'/nota')->with('ok', $msg);
     }
 
     public function alertas(Request $request): View
@@ -825,17 +1365,14 @@ class AlmoxarifadoController extends Controller
         return view('almoxarifado::alertas', [
             'alertas' => AlertaCompra::listar(150, $status !== 'todos' ? $status : null),
             'status' => $status,
-            'podeGerir' => PermissoesAlmoxarifado::podeAssinar(
-                PermissoesAlmoxarifado::usuarioAtual(),
-                'separacao'
-            ),
+            'podeGerir' => PermissoesAlmoxarifado::podeGerirAlertas(),
         ]);
     }
 
     public function atualizarAlerta(Request $request, int $id): RedirectResponse
     {
-        if (! PermissoesAlmoxarifado::podeAssinar(PermissoesAlmoxarifado::usuarioAtual(), 'separacao')) {
-            return back()->with('erro', 'Sem permissão para gerir alertas de compra.');
+        if (! PermissoesAlmoxarifado::podeGerirAlertas()) {
+            return back()->with('erro', 'Sem permissão para gerir alertas de compra (operação do depósito).');
         }
         $status = (string) $request->input('status', AlertaCompra::STATUS_EM_COMPRA);
         if ($status === AlertaCompra::STATUS_ATENDIDO) {
@@ -960,6 +1497,9 @@ class AlmoxarifadoController extends Controller
 
     public function salvarMovimento(Request $request): RedirectResponse
     {
+        if (! PermissoesAlmoxarifado::podeOperarDeposito()) {
+            return back()->with('erro', 'Sem permissão para registrar entrada/saída no depósito.');
+        }
         $skuRaw = trim((string) $request->input('item', ''));
         [$sku, $titulo] = $this->resolverItem($skuRaw);
         $sentido = (string) $request->input('sentido', MovimentoEstoque::ENTRADA);
@@ -1069,7 +1609,7 @@ class AlmoxarifadoController extends Controller
     }
 
     /**
-     * @return list<array{sku:string,titulo:string,saldo:int,minimo:int}>
+     * @return list<array{id:int,sku:string,titulo:string,saldo:int,minimo:int,foto:?string,foto_url:?string}>
      */
     private function carregarItens(): array
     {
@@ -1077,11 +1617,16 @@ class AlmoxarifadoController extends Controller
             $out = [];
             foreach (PocRegistro::listar('item', 500) as $r) {
                 $p = $r['payload'];
+                $foto = trim((string) ($p['foto'] ?? ''));
+                $foto = $foto !== '' ? $foto : null;
                 $out[] = [
+                    'id' => (int) $r['id'],
                     'sku' => (string) ($p['sku'] ?? $r['meta'] ?? 'SKU'.$r['id']),
                     'titulo' => (string) ($p['titulo'] ?? $r['titulo']),
                     'saldo' => (int) ($p['saldo'] ?? 0),
                     'minimo' => (int) ($p['minimo'] ?? 0),
+                    'foto' => $foto,
+                    'foto_url' => ItemFoto::url($foto),
                 ];
             }
 
@@ -1093,16 +1638,16 @@ class AlmoxarifadoController extends Controller
         }
 
         return [
-            ['sku' => 'CAD-A4', 'titulo' => 'Caderno A4', 'saldo' => 120, 'minimo' => 40],
-            ['sku' => 'LAP-HB', 'titulo' => 'Lápis HB', 'saldo' => 18, 'minimo' => 50],
-            ['sku' => 'SULFITE', 'titulo' => 'Resma sulfite', 'saldo' => 64, 'minimo' => 20],
-            ['sku' => 'GIZ', 'titulo' => 'Giz branco', 'saldo' => 8, 'minimo' => 30],
+            ['id' => 0, 'sku' => 'CAD-A4', 'titulo' => 'Caderno A4', 'saldo' => 120, 'minimo' => 40, 'foto' => null, 'foto_url' => null],
+            ['id' => 0, 'sku' => 'LAP-HB', 'titulo' => 'Lápis HB', 'saldo' => 18, 'minimo' => 50, 'foto' => null, 'foto_url' => null],
+            ['id' => 0, 'sku' => 'SULFITE', 'titulo' => 'Resma sulfite', 'saldo' => 64, 'minimo' => 20, 'foto' => null, 'foto_url' => null],
+            ['id' => 0, 'sku' => 'GIZ', 'titulo' => 'Giz branco', 'saldo' => 8, 'minimo' => 30, 'foto' => null, 'foto_url' => null],
         ];
     }
 
     private function podeResolverCobertura(mixed $user): bool
     {
-        return PermissoesAlmoxarifado::podeRetirarFaltosos($user)
+        return PermissoesAlmoxarifado::podeOperarDeposito($user)
             || PermissoesAlmoxarifado::podeAssinar($user, 'entrega');
     }
 

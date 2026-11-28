@@ -71,9 +71,11 @@
         .badge.ok { background: var(--ok-fundo); color: var(--ok); } .badge.fail { background: var(--erro-fundo); color: var(--erro); } .badge.warn { background: #fff6e8; color: var(--ambar); }
         /* Status do pedido — identidade visual */
         .badge.st-carrinho { background:#eef1f4; color:#5b6b76; }
-        .badge.st-fechado { background:#e8eef5; color:#3d5a80; }
-        .badge.st-separado { background:#e4f1f8; color:#2a6f97; }
+        .badge.st-fechado, .badge.st-solicitado { background:#e8eef5; color:#3d5a80; }
         .badge.st-aceito { background:#e5f6ec; color:#1a7a4c; }
+        .badge.st-separacao { background:#eaf4fb; color:#2a6f97; }
+        .badge.st-separado { background:#e4f1f8; color:#1b6ca8; }
+        .badge.st-transito { background:#e3f5ef; color:#0b6e4f; }
         .badge.st-entregue { background:#e0f4f4; color:#0d7377; }
         .badge.st-conferido { background:#d8f0e4; color:#17663f; box-shadow:inset 0 0 0 1px color-mix(in srgb,#17663f 25%,transparent); }
         .badge.st-bloqueado { background:#fdeceb; color:#c0392b; }

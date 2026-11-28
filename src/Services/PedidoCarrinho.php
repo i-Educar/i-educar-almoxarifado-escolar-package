@@ -3,6 +3,7 @@
 namespace iEducar\Packages\BuritiAlmoxarifadoEscolar\Services;
 
 use RuntimeException;
+use Throwable;
 
 /**
  * Pedido com carrinho multi-item, fechamento e nota com assinaturas.
@@ -13,18 +14,45 @@ final class PedidoCarrinho
 
     public const string STATUS_CARRINHO = 'carrinho';
 
+    /** @deprecated use STATUS_SOLICITADO — mantido para pedidos legados */
     public const string STATUS_FECHADO = 'fechado';
+
+    public const string STATUS_SOLICITADO = 'solicitado';
+
+    public const string STATUS_ACEITO = 'aceito';
+
+    public const string STATUS_SEPARACAO = 'separacao';
 
     public const string STATUS_SEPARADO = 'separado';
 
-    public const string STATUS_ACEITO = 'aceito';
+    public const string STATUS_EM_TRANSITO = 'em_transito';
 
     public const string STATUS_ENTREGUE = 'entregue';
 
     public const string STATUS_CONFERIDO = 'conferido';
 
-    /** @var list<string> */
-    public const array ETAPAS_ASSINATURA = ['separacao', 'aceite', 'entrega', 'conferencia'];
+    /**
+     * Ciclo operacional (após o carrinho). Conferido = finalizado.
+     *
+     * @var list<string>
+     */
+    public const array ORDEM_CICLO = [
+        self::STATUS_SOLICITADO,
+        self::STATUS_ACEITO,
+        self::STATUS_SEPARACAO,
+        self::STATUS_SEPARADO,
+        self::STATUS_EM_TRANSITO,
+        self::STATUS_ENTREGUE,
+        self::STATUS_CONFERIDO,
+    ];
+
+    /**
+     * Etapas com assinatura formal (PDF / verificação pública).
+     * Separação e Em trânsito são só operacionais (avaliação do sistema).
+     *
+     * @var list<string>
+     */
+    public const array ETAPAS_ASSINATURA = ['aceite', 'entrega', 'conferencia'];
 
     /**
      * @return array{id:int,payload:array<string,mixed>}
@@ -52,8 +80,8 @@ final class PedidoCarrinho
             'status' => self::STATUS_CARRINHO,
             'itens' => [],
             'assinaturas' => [
-                'separacao' => null,
                 'aceite' => null,
+                'separacao' => null,
                 'entrega' => null,
                 'conferencia' => null,
             ],
@@ -96,6 +124,7 @@ final class PedidoCarrinho
         int $quantidade,
         string $origem = 'catalogo',
         ?int $alertaId = null,
+        ?string $foto = null,
     ): void {
         $pedido = self::obter($pedidoId);
         $p = $pedido['payload'];
@@ -106,6 +135,7 @@ final class PedidoCarrinho
         $sku = strtoupper(trim($sku));
         $titulo = trim($titulo);
         $quantidade = max(1, $quantidade);
+        $foto = $foto !== null && trim($foto) !== '' ? trim($foto) : null;
         if ($titulo === '') {
             throw new RuntimeException('Informe o item (SKU/título).');
         }
@@ -116,25 +146,32 @@ final class PedidoCarrinho
             $origem = 'catalogo';
         }
 
-        /** @var list<array{sku:string,titulo:string,quantidade:int,origem?:string,alerta_id?:?int}> $itens */
+        /** @var list<array{sku:string,titulo:string,quantidade:int,origem?:string,alerta_id?:?int,foto?:?string}> $itens */
         $itens = $p['itens'];
         $achou = false;
         foreach ($itens as $i => $item) {
             if (strtoupper($item['sku']) === $sku && ($item['origem'] ?? 'catalogo') === $origem) {
                 $itens[$i]['quantidade'] = (int) $item['quantidade'] + $quantidade;
                 $itens[$i]['titulo'] = $titulo;
+                if ($foto !== null) {
+                    $itens[$i]['foto'] = $foto;
+                }
                 $achou = true;
                 break;
             }
         }
         if (! $achou) {
-            $itens[] = [
+            $linha = [
                 'sku' => $sku,
                 'titulo' => $titulo,
                 'quantidade' => $quantidade,
                 'origem' => $origem,
                 'alerta_id' => $alertaId,
             ];
+            if ($foto !== null) {
+                $linha['foto'] = $foto;
+            }
+            $itens[] = $linha;
         }
 
         $p['itens'] = $itens;
@@ -163,27 +200,27 @@ final class PedidoCarrinho
         $pedido = self::obter($pedidoId);
         $p = $pedido['payload'];
         if (($p['status'] ?? '') !== self::STATUS_CARRINHO) {
-            throw new RuntimeException('Pedido já foi fechado.');
+            throw new RuntimeException('Pedido já foi solicitado.');
         }
         if ($p['itens'] === []) {
             throw new RuntimeException('Inclua ao menos um item no carrinho antes de fechar.');
         }
 
-        $p['status'] = self::STATUS_FECHADO;
+        $p['status'] = self::STATUS_SOLICITADO;
         $p['fechado_em'] = now()->toDateTimeString();
-        PocRegistro::atualizar($pedidoId, $p, $p['escola'], self::STATUS_FECHADO.' · '.count($p['itens']).' item(ns)');
+        $p['solicitado_em'] = $p['fechado_em'];
+        PocRegistro::atualizar($pedidoId, $p, $p['escola'], self::STATUS_SOLICITADO.' · '.count($p['itens']).' item(ns)');
 
-        if (class_exists(\iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::class)) {
-            \iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::paraProcesso(
-                \iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\Processos::PEDIDOS,
-                'Almoxarifado: pedido #'.$pedidoId.' fechado — '.$p['escola'].' ('.count($p['itens']).' item(ns)).',
-                '/almoxarifado-escolar/pedidos/'.$pedidoId,
-            );
-        }
+        self::notificarEtapaPendente(
+            $pedidoId,
+            'aceite',
+            $p,
+            'Almoxarifado: pedido #'.$pedidoId.' solicitado — aguardando Aceite — '.$p['escola'].' ('.count($p['itens']).' item(ns)).',
+        );
     }
 
     /**
-     * @param  'separacao'|'aceite'|'entrega'|'conferencia'  $etapa
+     * @param  'aceite'|'entrega'|'conferencia'  $etapa
      */
     public static function assinar(
         int $pedidoId,
@@ -204,7 +241,7 @@ final class PedidoCarrinho
 
         $pedido = self::obter($pedidoId);
         $p = $pedido['payload'];
-        $status = (string) ($p['status'] ?? '');
+        $status = self::normalizarStatus((string) ($p['status'] ?? ''));
 
         if ($status === self::STATUS_CARRINHO) {
             throw new RuntimeException('Feche o pedido antes de coletar assinaturas.');
@@ -213,10 +250,10 @@ final class PedidoCarrinho
             throw new RuntimeException('Pedido já conferido e finalizado — não é possível alterar assinaturas ou emitir novas confirmações.');
         }
 
-        $ordem = ['separacao' => 0, 'aceite' => 1, 'entrega' => 2, 'conferencia' => 3];
-        $idx = $ordem[$etapa];
+        $ordem = ['aceite' => 0, 'entrega' => 1, 'conferencia' => 2];
+        $idx = $ordem[$etapa] ?? 0;
         foreach (self::ETAPAS_ASSINATURA as $prev) {
-            if ($ordem[$prev] >= $idx) {
+            if (($ordem[$prev] ?? 99) >= $idx) {
                 break;
             }
             if (empty($p['assinaturas'][$prev])) {
@@ -233,6 +270,18 @@ final class PedidoCarrinho
             );
         }
 
+        // Entrega só após Em trânsito (separação operacional + remessa/QR).
+        if ($etapa === 'entrega') {
+            $emTransito = $status === self::STATUS_EM_TRANSITO
+                || ! empty($p['em_transito_em'])
+                || $status === self::STATUS_ENTREGUE;
+            if (! $emTransito) {
+                throw new RuntimeException(
+                    'Registre a separação e emita a remessa (Em trânsito) antes da assinatura de entrega.'
+                );
+            }
+        }
+
         $agora = now();
         $p['assinaturas'][$etapa] = [
             'responsavel' => $responsavel,
@@ -243,19 +292,6 @@ final class PedidoCarrinho
             'quando_iso' => $agora->toIso8601String(),
             'quando_raw' => $agora->toDateTimeString(),
         ];
-
-        $p['status'] = match ($etapa) {
-            'separacao' => self::STATUS_SEPARADO,
-            'aceite' => self::STATUS_ACEITO,
-            'entrega' => self::STATUS_ENTREGUE,
-            'conferencia' => self::STATUS_CONFERIDO,
-            default => $status,
-        };
-
-        if ($etapa === 'conferencia') {
-            $p['finalizado_em'] = $agora->toDateTimeString();
-            $p['finalizado'] = true;
-        }
 
         // Aceite com faltas: marca parcial e bloqueia etapas finais até o almox tratar.
         if ($etapa === 'aceite') {
@@ -269,10 +305,25 @@ final class PedidoCarrinho
                     'quando' => $agora->toDateTimeString(),
                     'por' => $responsavel,
                 ];
+                $p['status'] = self::STATUS_ACEITO;
             } else {
                 $p['parcial'] = (bool) ($p['parcial'] ?? false);
                 $p['bloqueio_entrega'] = false;
+                // Aceite ok → entra na fase operacional de separação (sem assinatura).
+                $p['status'] = self::STATUS_SEPARACAO;
             }
+        } else {
+            $p['status'] = match ($etapa) {
+                'entrega' => self::STATUS_ENTREGUE,
+                'conferencia' => self::STATUS_CONFERIDO,
+                default => $status,
+            };
+        }
+
+        if ($etapa === 'conferencia') {
+            $p['finalizado_em'] = $agora->toDateTimeString();
+            $p['finalizado'] = true;
+            $p['status'] = self::STATUS_CONFERIDO;
         }
 
         if ($etapa === 'entrega' && empty($p['baixa_estoque'])) {
@@ -309,6 +360,19 @@ final class PedidoCarrinho
             $p['baixa_em'] = now()->toDateTimeString();
         }
 
+        // Autenticidade do documento + da etapa; LibreSign quando módulo ativo.
+        try {
+            $p = (new NotaAssinaturaDigital())->aposAssinarEtapa(
+                $pedidoId,
+                $etapa,
+                $p,
+                $responsavel,
+                $login,
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
+
         $metaExtra = ! empty($p['bloqueio_entrega']) ? ' · parcial/bloqueado' : '';
         if (! empty($p['itens_nao_atendidos'])) {
             $metaExtra .= ' · '.count($p['itens_nao_atendidos']).' não atendido(s)';
@@ -319,6 +383,28 @@ final class PedidoCarrinho
             $p['escola'],
             $p['status'].' · '.count($p['itens']).' item(ns)'.$metaExtra
         );
+
+        $proxima = self::proximaEtapaPendente($p);
+        if ($proxima !== null) {
+            self::notificarEtapaPendente(
+                $pedidoId,
+                $proxima,
+                $p,
+                'Almoxarifado: pedido #'.$pedidoId.' aguardando '
+                    .self::rotuloEtapa($proxima).' — '.$p['escola'].'.',
+            );
+        } elseif ($etapa === 'aceite' && ($p['status'] ?? '') === self::STATUS_SEPARACAO
+            && class_exists(\iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::class)
+            && class_exists(\iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::class)
+        ) {
+            // Separação é operacional (sem assinatura): avisa quem opera o depósito.
+            $niveis = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::niveisAssinatura('separacao');
+            \iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::paraNiveis(
+                $niveis,
+                'Almoxarifado: pedido #'.$pedidoId.' pronto para separação — '.$p['escola'].'.',
+                '/almoxarifado-escolar/pedidos/'.$pedidoId.'/nota',
+            );
+        }
     }
 
     /**
@@ -355,7 +441,13 @@ final class PedidoCarrinho
 
         // Aceito/separado com faltas ainda na lista → bloqueia mesmo sem flag legado.
         $status = (string) ($payload['status'] ?? '');
-        if (in_array($status, [self::STATUS_ACEITO, self::STATUS_SEPARADO, self::STATUS_FECHADO], true)) {
+        if (in_array(self::normalizarStatus($status), [
+            self::STATUS_SOLICITADO,
+            self::STATUS_ACEITO,
+            self::STATUS_SEPARACAO,
+            self::STATUS_SEPARADO,
+            self::STATUS_EM_TRANSITO,
+        ], true)) {
             return self::itensFaltosos($payload) !== [];
         }
 
@@ -436,6 +528,14 @@ final class PedidoCarrinho
             'por' => $responsavel,
             'ultima_retirada' => (string) $faltoso['titulo'],
         ];
+
+        // Aceite já feito e liberado → avança para a fase de separação.
+        if (! $aindaFalta
+            && ! empty($p['assinaturas']['aceite'])
+            && empty($p['assinaturas']['separacao'])
+            && self::normalizarStatus((string) ($p['status'] ?? '')) === self::STATUS_ACEITO) {
+            $p['status'] = self::STATUS_SEPARACAO;
+        }
 
         PocRegistro::atualizar(
             $pedidoId,
@@ -632,24 +732,218 @@ final class PedidoCarrinho
         return ['alerta_id' => $alertaId, 'mensagem' => $mensagem, 'liberado' => ! $ainda];
     }
 
+
+    /**
+     * Próxima etapa de assinatura ainda vazia (respeita bloqueio de entrega).
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    public static function proximaEtapaPendente(array $payload): ?string
+    {
+        if (self::finalizado($payload)) {
+            return null;
+        }
+        $status = self::normalizarStatus((string) ($payload['status'] ?? ''));
+        foreach (self::ETAPAS_ASSINATURA as $etapa) {
+            if (! empty($payload['assinaturas'][$etapa])) {
+                continue;
+            }
+            if (in_array($etapa, ['entrega', 'conferencia'], true) && self::bloqueiaEntrega($payload)) {
+                return null;
+            }
+            // Entrega aguarda Em trânsito (separação / remessa são operacionais).
+            if ($etapa === 'entrega') {
+                $emTransito = $status === self::STATUS_EM_TRANSITO
+                    || ! empty($payload['em_transito_em'])
+                    || $status === self::STATUS_ENTREGUE;
+                if (! $emTransito) {
+                    return null;
+                }
+            }
+
+            return $etapa;
+        }
+
+        return null;
+    }
+
+    /**
+     * Avisa todos os usuários com permissão na etapa (várias pessoas podem separar/entregar).
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    public static function notificarEtapaPendente(
+        int $pedidoId,
+        string $etapa,
+        array $payload,
+        ?string $texto = null,
+    ): int {
+        if (! in_array($etapa, self::ETAPAS_ASSINATURA, true)) {
+            return 0;
+        }
+        if (! class_exists(\iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::class)) {
+            return 0;
+        }
+        if (! class_exists(\iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::class)) {
+            return 0;
+        }
+
+        $escola = (string) ($payload['escola'] ?? '');
+        $texto = $texto ?? ('Almoxarifado: documento aguardando '
+            .self::rotuloEtapa($etapa).' no pedido #'.$pedidoId
+            .($escola !== '' ? ' — '.$escola : '').'.');
+        $link = '/almoxarifado-escolar/pedidos/'.$pedidoId.'/nota';
+        $niveis = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\PermissoesAlmoxarifado::niveisAssinatura($etapa);
+
+        return \iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::paraNiveis($niveis, $texto, $link);
+    }
+
     public static function rotuloEtapa(string $etapa): string
     {
         return match ($etapa) {
-            'separacao' => 'Separação',
             'aceite' => 'Aceite',
+            'separacao' => 'Separação',
             'entrega' => 'Entrega',
             'conferencia' => 'Conferência',
             default => $etapa,
         };
     }
 
+    /** Normaliza status legado (fechado → solicitado). */
+    public static function normalizarStatus(string $status): string
+    {
+        return $status === self::STATUS_FECHADO ? self::STATUS_SOLICITADO : $status;
+    }
+
+    /**
+     * Separação operacional (sem assinatura formal): material separado no depósito.
+     */
+    public static function marcarSeparado(int $pedidoId, ?string $responsavel = null): void
+    {
+        $pedido = self::obter($pedidoId);
+        $p = $pedido['payload'];
+        $status = self::normalizarStatus((string) ($p['status'] ?? ''));
+        if (self::finalizado($p) || $status === self::STATUS_CARRINHO) {
+            return;
+        }
+        if (in_array($status, [
+            self::STATUS_SEPARADO,
+            self::STATUS_EM_TRANSITO,
+            self::STATUS_ENTREGUE,
+            self::STATUS_CONFERIDO,
+        ], true)) {
+            return;
+        }
+        if (empty($p['assinaturas']['aceite']) && ! in_array($status, [self::STATUS_ACEITO, self::STATUS_SEPARACAO], true)) {
+            throw new RuntimeException('Conclua o aceite antes de marcar a separação.');
+        }
+        if (self::bloqueiaEntrega($p)) {
+            throw new RuntimeException('Retire os itens faltosos antes de concluir a separação.');
+        }
+
+        $agora = now();
+        $p['status'] = self::STATUS_SEPARADO;
+        $p['separado_em'] = $agora->toDateTimeString();
+        if ($responsavel !== null && trim($responsavel) !== '') {
+            $p['separado_por'] = trim($responsavel);
+        }
+        // Marca operacional legada (não é assinatura do PDF).
+        if (empty($p['assinaturas']['separacao'])) {
+            $p['assinaturas']['separacao'] = [
+                'responsavel' => $p['separado_por'] ?? 'sistema',
+                'quando' => $agora->format('d/m/Y H:i:s'),
+                'quando_raw' => $agora->toDateTimeString(),
+                'via' => 'operacional',
+            ];
+        }
+        PocRegistro::atualizar(
+            $pedidoId,
+            $p,
+            $p['escola'] ?? null,
+            self::STATUS_SEPARADO.' · '.count($p['itens'] ?? []).' item(ns)'
+        );
+    }
+
+    /**
+     * Marca o pedido como em trânsito (após separado, na emissão de remessa/QR)
+     * e notifica quem solicitou os itens.
+     */
+    public static function marcarEmTransito(int $pedidoId): void
+    {
+        $pedido = self::obter($pedidoId);
+        $p = $pedido['payload'];
+        $status = self::normalizarStatus((string) ($p['status'] ?? ''));
+        if (self::finalizado($p) || $status === self::STATUS_CARRINHO) {
+            return;
+        }
+        if (in_array($status, [self::STATUS_ENTREGUE, self::STATUS_CONFERIDO, self::STATUS_EM_TRANSITO], true)) {
+            return;
+        }
+        if (! in_array($status, [self::STATUS_SEPARADO, self::STATUS_SEPARACAO, self::STATUS_ACEITO], true)
+            && empty($p['assinaturas']['aceite'])) {
+            return;
+        }
+
+        // Se ainda está em separação, fecha o passo operacional ao emitir a remessa.
+        if ($status === self::STATUS_SEPARACAO || $status === self::STATUS_ACEITO) {
+            $p['separado_em'] = $p['separado_em'] ?? now()->toDateTimeString();
+        }
+
+        $jaEmTransito = ! empty($p['em_transito_em']);
+        $p['status'] = self::STATUS_EM_TRANSITO;
+        $p['em_transito_em'] = $p['em_transito_em'] ?? now()->toDateTimeString();
+        PocRegistro::atualizar(
+            $pedidoId,
+            $p,
+            $p['escola'] ?? null,
+            self::STATUS_EM_TRANSITO.' · '.count($p['itens'] ?? []).' item(ns)'
+        );
+
+        if (! $jaEmTransito) {
+            self::notificarSolicitanteEmTransito($pedidoId, $p);
+        }
+    }
+
+    /**
+     * Avisa o solicitante de que o material saiu (Em trânsito).
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    public static function notificarSolicitanteEmTransito(int $pedidoId, array $payload): void
+    {
+        if (! class_exists(\iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::class)) {
+            return;
+        }
+        $solicitanteId = (int) ($payload['solicitante_id'] ?? 0);
+        $escola = (string) ($payload['escola'] ?? '');
+        $texto = 'Almoxarifado: pedido #'.$pedidoId.' está em trânsito'
+            .($escola !== '' ? ' — '.$escola : '')
+            .'. Acompanhe a entrega e a conferência.';
+        $link = '/almoxarifado-escolar/pedidos/'.$pedidoId;
+
+        if ($solicitanteId > 0) {
+            \iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::paraUsuario($solicitanteId, $texto, $link);
+
+            return;
+        }
+
+        \iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::paraProcesso(
+            \iEducar\Packages\BuritiAlmoxarifadoEscolar\Support\Processos::PEDIDOS,
+            $texto,
+            $link,
+        );
+    }
+
     public static function rotuloStatus(string $status, ?array $payload = null): string
     {
+        $status = self::normalizarStatus($status);
         $base = match ($status) {
             self::STATUS_CARRINHO => 'Carrinho',
-            self::STATUS_FECHADO => 'Fechado',
+            self::STATUS_SOLICITADO => 'Solicitado',
+            self::STATUS_ACEITO => 'Aceite',
+            self::STATUS_SEPARACAO => 'Separação',
             self::STATUS_SEPARADO => 'Separado',
-            self::STATUS_ACEITO => 'Aceito',
+            self::STATUS_EM_TRANSITO => 'Em trânsito',
             self::STATUS_ENTREGUE => 'Entregue',
             self::STATUS_CONFERIDO => 'Conferido',
             default => $status,
@@ -682,6 +976,7 @@ final class PedidoCarrinho
      */
     public static function visualStatus(string $status, ?array $payload = null): array
     {
+        $status = self::normalizarStatus($status);
         $bloqueado = $payload !== null && self::bloqueiaEntrega($payload);
         $mapa = match (true) {
             $bloqueado => [
@@ -696,22 +991,34 @@ final class PedidoCarrinho
                 'classe' => 'st-carrinho',
                 'tom' => 'warn',
             ],
-            $status === self::STATUS_FECHADO => [
-                'icone' => 'fa-lock',
+            $status === self::STATUS_SOLICITADO => [
+                'icone' => 'fa-inbox',
                 'cor' => '#3d5a80',
-                'classe' => 'st-fechado',
-                'tom' => 'warn',
-            ],
-            $status === self::STATUS_SEPARADO => [
-                'icone' => 'fa-cubes',
-                'cor' => '#2a6f97',
-                'classe' => 'st-separado',
+                'classe' => 'st-solicitado',
                 'tom' => 'warn',
             ],
             $status === self::STATUS_ACEITO => [
                 'icone' => 'fa-thumbs-o-up',
                 'cor' => '#1a7a4c',
                 'classe' => 'st-aceito',
+                'tom' => 'ok',
+            ],
+            $status === self::STATUS_SEPARACAO => [
+                'icone' => 'fa-cube',
+                'cor' => '#2a6f97',
+                'classe' => 'st-separacao',
+                'tom' => 'warn',
+            ],
+            $status === self::STATUS_SEPARADO => [
+                'icone' => 'fa-cubes',
+                'cor' => '#1b6ca8',
+                'classe' => 'st-separado',
+                'tom' => 'ok',
+            ],
+            $status === self::STATUS_EM_TRANSITO => [
+                'icone' => 'fa-exchange',
+                'cor' => '#0b6e4f',
+                'classe' => 'st-transito',
                 'tom' => 'ok',
             ],
             $status === self::STATUS_ENTREGUE => [
@@ -771,10 +1078,14 @@ final class PedidoCarrinho
         }
         $status = (string) ($payload['status'] ?? '');
 
+        $status = self::normalizarStatus($status);
+
         return in_array($status, [
-            self::STATUS_FECHADO,
-            self::STATUS_SEPARADO,
+            self::STATUS_SOLICITADO,
             self::STATUS_ACEITO,
+            self::STATUS_SEPARACAO,
+            self::STATUS_SEPARADO,
+            self::STATUS_EM_TRANSITO,
             self::STATUS_ENTREGUE,
         ], true);
     }
@@ -891,7 +1202,7 @@ final class PedidoCarrinho
 
     /**
      * Depois da entrada conferida: abre um pedido fechado só com o item comprado.
-     * Ele entra no ciclo completo (separação → aceite → entrega → conferência).
+     * Ele entra no ciclo completo (aceite → separação → em trânsito → entrega → conferência).
      *
      * @param  array<string,mixed>  $alerta
      * @return array{id:int,payload:array<string,mixed>,itens:int}
@@ -937,12 +1248,12 @@ final class PedidoCarrinho
         }
         $np['observacao_reposicao'] = 'Gerado após a conferência da entrada da compra'
             .($origemId > 0 ? ' do pedido #'.$origemId : '')
-            .'. Segue o fluxo completo: separação → aceite → entrega → conferência.';
+            .'. Segue o fluxo completo: aceite → separação → em trânsito → entrega → conferência.';
         PocRegistro::atualizar(
             $novoId,
             $np,
             $escola,
-            self::STATUS_FECHADO.' · compra conferida · '.$qtd.' un.'
+            self::STATUS_SOLICITADO.' · compra conferida · '.$qtd.' un.'
         );
 
         if ($origemId > 0) {
@@ -1023,16 +1334,18 @@ final class PedidoCarrinho
 
         $statusLegado = (string) ($payload['status'] ?? self::STATUS_CARRINHO);
         if ($statusLegado === 'Em separação') {
-            $payload['status'] = self::STATUS_FECHADO;
+            $payload['status'] = self::STATUS_SEPARACAO;
         } elseif ($statusLegado === 'Entregue') {
             $payload['status'] = self::STATUS_ENTREGUE;
+        } elseif ($statusLegado === self::STATUS_FECHADO) {
+            $payload['status'] = self::STATUS_SOLICITADO;
         } elseif (! isset($payload['status'])) {
             $payload['status'] = self::STATUS_CARRINHO;
         }
 
         $payload['assinaturas'] = array_merge([
-            'separacao' => null,
             'aceite' => null,
+            'separacao' => null,
             'entrega' => null,
             'conferencia' => null,
         ], is_array($payload['assinaturas'] ?? null) ? $payload['assinaturas'] : []);
@@ -1051,19 +1364,92 @@ final class PedidoCarrinho
             : null;
 
         foreach ($payload['itens'] as $i => $item) {
-            if (! isset($item['origem'])) {
-                $payload['itens'][$i]['origem'] = 'catalogo';
+            if (! is_array($item)) {
+                $payload['itens'][$i] = [
+                    'sku' => (string) $item,
+                    'titulo' => (string) $item,
+                    'quantidade' => 1,
+                    'origem' => 'catalogo',
+                ];
+                continue;
             }
+            $sku = strtoupper(trim((string) ($item['sku'] ?? $item['item'] ?? '')));
+            $titulo = trim((string) ($item['titulo'] ?? $item['nome'] ?? $item['item'] ?? $sku));
+            $payload['itens'][$i]['sku'] = $sku !== '' ? $sku : 'ITEM';
+            $payload['itens'][$i]['titulo'] = $titulo !== '' ? $titulo : ($sku !== '' ? $sku : 'Item');
+            $payload['itens'][$i]['quantidade'] = max(1, (int) ($item['quantidade'] ?? $item['qtd'] ?? 1));
+            $payload['itens'][$i]['origem'] = (string) ($item['origem'] ?? 'catalogo');
         }
 
         // Mantém bloqueio coerente com faltas atuais.
         if (self::itensFaltosos($payload) !== []
-            && in_array((string) ($payload['status'] ?? ''), [self::STATUS_ACEITO, self::STATUS_SEPARADO, self::STATUS_FECHADO], true)) {
+            && in_array(self::normalizarStatus((string) ($payload['status'] ?? '')), [
+                self::STATUS_SOLICITADO,
+                self::STATUS_ACEITO,
+                self::STATUS_SEPARACAO,
+                self::STATUS_SEPARADO,
+                self::STATUS_EM_TRANSITO,
+            ], true)) {
             $payload['bloqueio_entrega'] = true;
             $payload['parcial'] = true;
         } elseif (self::itensFaltosos($payload) === [] && ! empty($payload['itens_nao_atendidos'])) {
             $payload['bloqueio_entrega'] = false;
             $payload['parcial'] = true;
+        }
+
+        // Reenquadra status ao ciclo atual (assinatura só em aceite/entrega/conferência).
+        $payload = self::reenquadrarStatusCiclo($payload);
+
+        return $payload;
+    }
+
+    /**
+     * Alinha status legado ao ciclo: solicitado → aceite → separação → separado → em trânsito → entregue → conferido.
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private static function reenquadrarStatusCiclo(array $payload): array
+    {
+        if (self::finalizado($payload)) {
+            $payload['status'] = self::STATUS_CONFERIDO;
+
+            return $payload;
+        }
+
+        $assin = is_array($payload['assinaturas'] ?? null) ? $payload['assinaturas'] : [];
+        $tem = static fn (string $e): bool => is_array($assin[$e] ?? null)
+            && trim((string) ($assin[$e]['responsavel'] ?? '')) !== '';
+
+        $status = self::normalizarStatus((string) ($payload['status'] ?? self::STATUS_CARRINHO));
+        if ($status === self::STATUS_CARRINHO) {
+            return $payload;
+        }
+
+        // Prioridade: assinaturas formais e marcas operacionais.
+        if ($tem('conferencia')) {
+            $payload['status'] = self::STATUS_CONFERIDO;
+            $payload['finalizado'] = true;
+        } elseif ($tem('entrega')) {
+            $payload['status'] = self::STATUS_ENTREGUE;
+        } elseif (! empty($payload['em_transito_em']) || $status === self::STATUS_EM_TRANSITO) {
+            $payload['status'] = self::STATUS_EM_TRANSITO;
+        } elseif ($tem('separacao') || ! empty($payload['separado_em']) || $status === self::STATUS_SEPARADO) {
+            $payload['status'] = self::STATUS_SEPARADO;
+        } elseif ($tem('aceite')) {
+            // Aceite feito → fase operacional de separação (salvo se já avançou).
+            if (! in_array($status, [
+                self::STATUS_SEPARACAO,
+                self::STATUS_SEPARADO,
+                self::STATUS_EM_TRANSITO,
+                self::STATUS_ENTREGUE,
+            ], true)) {
+                $payload['status'] = ! empty($payload['bloqueio_entrega'])
+                    ? self::STATUS_ACEITO
+                    : self::STATUS_SEPARACAO;
+            }
+        } elseif ($status === self::STATUS_FECHADO) {
+            $payload['status'] = self::STATUS_SOLICITADO;
         }
 
         return $payload;

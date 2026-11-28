@@ -76,6 +76,25 @@ final class PermissoesAlmoxarifado
         return is_array($lista) ? array_values($lista) : ['admin'];
     }
 
+
+    /**
+     * Usuários ativos cujo nível está autorizado a assinar a etapa.
+     *
+     * @return list<int>
+     */
+    public static function usuariosQuePodemAssinar(string $etapa, ?int $escolaId = null): array
+    {
+        $niveis = self::niveisAssinatura($etapa);
+        if ($niveis === []) {
+            return [];
+        }
+        if (class_exists(\iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::class)) {
+            return \iEducar\Packages\BuritiLagunaAmbiente\Support\Notificador::usuariosDosNiveis($niveis, $escolaId);
+        }
+
+        return [];
+    }
+
     public static function podeAssinar(?User $user, string $etapa): bool
     {
         if ($user === null) {
@@ -88,6 +107,34 @@ final class PermissoesAlmoxarifado
         }
 
         return self::usuarioEmNiveis($user, $permitidos);
+    }
+
+    /**
+     * Operação do depósito (catálogo, movimentos, alertas, remessa/QR).
+     * Alinhado às etapas aceite/separação do novo ciclo.
+     */
+    public static function podeOperarDeposito(?User $user = null): bool
+    {
+        $user ??= self::usuarioAtual();
+        if ($user === null) {
+            return false;
+        }
+
+        return self::podeAssinar($user, 'aceite')
+            || self::podeAssinar($user, 'separacao')
+            || self::podeRetirarFaltosos($user);
+    }
+
+    /** Emitir QR / etiquetas (marca «em trânsito»). */
+    public static function podeEmitirRemessa(?User $user = null): bool
+    {
+        return self::podeOperarDeposito($user);
+    }
+
+    /** Gerir alertas de compra (entrada / status). */
+    public static function podeGerirAlertas(?User $user = null): bool
+    {
+        return self::podeOperarDeposito($user);
     }
 
     public static function usuarioAtual(): ?User
@@ -138,7 +185,7 @@ final class PermissoesAlmoxarifado
     /**
      * @param  list<string|int>  $permitidos
      */
-    private static function usuarioEmNiveis(User $user, array $permitidos): bool
+    public static function usuarioEmNiveis(User $user, array $permitidos): bool
     {
         foreach ($permitidos as $token) {
             if ($token === '*' || $token === 'todos' || $token === 'any') {

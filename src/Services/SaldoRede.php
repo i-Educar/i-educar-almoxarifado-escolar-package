@@ -167,10 +167,12 @@ final class SaldoRede
                     $mapa[$escola]['unidades'] += $qtd;
                     $unidadesEntregues += $qtd;
                 }
-            } elseif (in_array($status, [
-                PedidoCarrinho::STATUS_FECHADO,
-                PedidoCarrinho::STATUS_SEPARADO,
+            } elseif (in_array(PedidoCarrinho::normalizarStatus($status), [
+                PedidoCarrinho::STATUS_SOLICITADO,
                 PedidoCarrinho::STATUS_ACEITO,
+                PedidoCarrinho::STATUS_SEPARACAO,
+                PedidoCarrinho::STATUS_SEPARADO,
+                PedidoCarrinho::STATUS_EM_TRANSITO,
             ], true)) {
                 $mapa[$escola]['pedidos_transito']++;
                 $pedidosTransitoTotal++;

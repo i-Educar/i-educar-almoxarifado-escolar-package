@@ -13,9 +13,30 @@
     $aguardandoReposicao = $aguardandoReposicao ?? [];
     $podeGerarReposicao = ! empty($podeGerarReposicao);
     $visual = $visual ?? \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::visualStatus($status, $p);
-    $ordemStatus = ['carrinho','fechado','separado','aceito','entregue','conferido'];
-    $idxStatus = array_search($status, $ordemStatus, true);
+    $statusNorm = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::normalizarStatus($status);
+    $ordemStatus = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::ORDEM_CICLO;
+    $assinaturas = is_array($p['assinaturas'] ?? null) ? $p['assinaturas'] : [];
+    $idxStatus = array_search($statusNorm, $ordemStatus, true);
     if ($idxStatus === false) { $idxStatus = 0; }
+    // Trilho baseado em assinaturas + status (aceite antes da separação).
+    $trilhoFeito = [
+        'solicitado' => $statusNorm !== 'carrinho',
+        'aceito' => ! empty($assinaturas['aceite']) || in_array($statusNorm, ['aceito','separacao','separado','em_transito','entregue','conferido'], true),
+        'separacao' => (! empty($assinaturas['aceite']) && $statusNorm === 'separacao') || $statusNorm === 'separacao' || in_array($statusNorm, ['separado','em_transito','entregue','conferido'], true),
+        'separado' => ! empty($p['separado_em']) || (! empty($assinaturas['separacao'])) || in_array($statusNorm, ['separado','em_transito','entregue','conferido'], true),
+        'em_transito' => $statusNorm === 'em_transito' || ! empty($p['em_transito_em']) || in_array($statusNorm, ['entregue','conferido'], true),
+        'entregue' => ! empty($assinaturas['entrega']) || in_array($statusNorm, ['entregue','conferido'], true),
+        'conferido' => $statusNorm === 'conferido' || ! empty($p['finalizado']),
+    ];
+    $trilhoAtual = match (true) {
+        $statusNorm === 'conferido' || ! empty($p['finalizado']) => 'conferido',
+        ! empty($assinaturas['entrega']) || $statusNorm === 'entregue' => 'entregue',
+        $statusNorm === 'em_transito' || ! empty($p['em_transito_em']) => 'em_transito',
+        ! empty($assinaturas['separacao']) || $statusNorm === 'separado' => 'separado',
+        $statusNorm === 'separacao' || (! empty($assinaturas['aceite']) && empty($assinaturas['separacao'])) => 'separacao',
+        ! empty($assinaturas['aceite']) || $statusNorm === 'aceito' => 'aceito',
+        default => 'solicitado',
+    };
 @endphp
 @section('titulo', 'Pedido #'.$id)
 @section('migalha', 'Pedidos / #'.$id)
@@ -40,6 +61,76 @@
 @section('conteudo')
 <style>
     .pedido-cabeca-status { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:0 0 14px; }
+    .carrinho-catalogo {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+    }
+    .cat-card {
+        display: flex;
+        flex-direction: column;
+        padding: 0;
+        overflow: hidden;
+        border-radius: 16px;
+        border: 1px solid var(--linha);
+        border-top: 1px solid var(--linha);
+        background: var(--superficie, #fff);
+        box-shadow: 0 10px 28px rgba(21, 34, 43, .05);
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .cat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 32px rgba(21, 34, 43, .08);
+        border-color: color-mix(in srgb, var(--cor-tela) 32%, var(--linha));
+    }
+    .cat-card__media {
+        position: relative;
+        aspect-ratio: 4 / 3;
+        background: linear-gradient(145deg, color-mix(in srgb, var(--clara) 70%, #fff), #f4f7f9);
+        overflow: hidden;
+    }
+    .cat-card__media img {
+        width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in;
+        transition: transform .35s ease;
+    }
+    .cat-card:hover .cat-card__media img { transform: scale(1.03); }
+    .cat-card__media-vazio {
+        width: 100%; height: 100%; display: grid; place-items: center;
+        color: var(--suave); font-size: 1.4rem;
+    }
+    .cat-card__sku-chip {
+        position: absolute; top: 10px; left: 10px;
+        padding: 4px 9px; border-radius: 999px;
+        font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+        background: color-mix(in srgb, #fff 88%, transparent); color: var(--tinta);
+        border: 1px solid color-mix(in srgb, var(--linha) 70%, transparent);
+        backdrop-filter: blur(6px);
+    }
+    .cat-card__corpo { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .cat-card__titulo {
+        margin: 0; font-size: .95rem; font-weight: 700; line-height: 1.3;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        min-height: 2.5em;
+    }
+    .cat-card__meta {
+        margin: 0; color: var(--suave); font-size: .78rem; font-weight: 600;
+    }
+    .cat-card__meta strong { color: var(--ok); font-weight: 800; }
+    .cat-card__form {
+        padding: 0 12px 12px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: end;
+    }
+    .cat-card__form label {
+        display: grid; gap: 4px; font-size: .72rem; font-weight: 700; color: var(--suave); margin: 0;
+    }
+    .cat-card__form input[type=number] {
+        min-height: 36px; padding: 6px 8px; border: 1px solid var(--linha);
+        border-radius: 8px; font: inherit; width: 100%; background: #fff;
+    }
+    .cat-card__form .botao { white-space: nowrap; }
 </style>
 
     <div class="pedido-cabeca-status" style="--st-cor: {{ $visual['cor'] }}">
@@ -59,21 +150,25 @@
     @if($status !== 'carrinho')
         <ul class="trilho-status" style="--st-cor: {{ $visual['cor'] }}" aria-label="Ciclo do pedido">
             @foreach([
-                'fechado' => ['fa-lock','Fechado'],
+                'solicitado' => ['fa-inbox','Solicitado'],
+                'aceito' => ['fa-thumbs-o-up','Aceite'],
+                'separacao' => ['fa-cube','Separação'],
                 'separado' => ['fa-cubes','Separado'],
-                'aceito' => ['fa-thumbs-o-up','Aceito'],
+                'em_transito' => ['fa-exchange','Em trânsito'],
                 'entregue' => ['fa-truck','Entregue'],
                 'conferido' => ['fa-check-circle','Conferido'],
             ] as $st => [$ico, $lab])
                 @php
                     $i = array_search($st, $ordemStatus, true);
                     $classe = '';
-                    if ($bloqueioEntrega && in_array($st, ['entregue','conferido'], true) && $idxStatus < $i) {
+                    if ($bloqueioEntrega && in_array($st, ['em_transito','entregue','conferido'], true) && $trilhoAtual !== 'conferido' && ! ($trilhoFeito[$st] ?? false)) {
                         $classe = 'bloqueado';
-                    } elseif ($i !== false && $i < $idxStatus) {
-                        $classe = 'feito';
-                    } elseif ($st === $status) {
+                    } elseif ($st === $trilhoAtual) {
                         $classe = 'atual';
+                    } elseif (! empty($trilhoFeito[$st]) && $i !== false && $i < array_search($trilhoAtual, $ordemStatus, true)) {
+                        $classe = 'feito';
+                    } elseif (! empty($trilhoFeito[$st]) && $st !== $trilhoAtual) {
+                        $classe = 'feito';
                     }
                 @endphp
                 <li class="{{ $classe }}"><i class="fa {{ $ico }}"></i>{{ $lab }}</li>
@@ -125,26 +220,48 @@
         <div class="bloco">
             <h2><i class="fa fa-plus"></i> Itens disponíveis (com saldo)</h2>
             <p style="margin:0 0 12px;color:var(--suave);font-size:.85rem">
-                Só entram itens do catálogo com saldo &gt; 0 — o setor separa e entrega.
+                Só entram itens do catálogo com saldo &gt; 0. Clique na foto para ampliar.
             </p>
-            <form class="form-grid" method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/itens') }}">
-                @csrf
-                <input type="hidden" name="modo" value="catalogo">
-                <label class="col-wide">Item disponível
-                    <select name="item" required>
-                        <option value="">— selecionar —</option>
-                        @foreach(($itensCatalogo ?? []) as $i)
-                            <option value="{{ $i['sku'] }} · {{ $i['titulo'] }}">
-                                {{ $i['sku'] }} — {{ $i['titulo'] }} (saldo {{ $i['saldo'] }})
-                            </option>
-                        @endforeach
-                    </select>
-                </label>
-                <label>Quantidade <input type="number" name="quantidade" min="1" required value="1"></label>
-                <div class="acoes"><button class="botao" type="submit"><i class="fa fa-cart-plus"></i> Incluir</button></div>
-            </form>
             @if(empty($itensCatalogo))
-                <p style="margin:10px 0 0;color:var(--ambar)">Nenhum item com saldo agora.</p>
+                <p style="margin:0;color:var(--ambar)">Nenhum item com saldo agora.</p>
+            @else
+                <div class="carrinho-catalogo">
+                    @foreach($itensCatalogo as $i)
+                        @php
+                            $legenda = trim(($i['sku'] ?? '').' — '.($i['titulo'] ?? ''), ' —');
+                        @endphp
+                        <article class="card cat-card">
+                            <div class="cat-card__media">
+                                @if(!empty($i['sku']))
+                                    <span class="cat-card__sku-chip">{{ $i['sku'] }}</span>
+                                @endif
+                                @if(!empty($i['foto_url']))
+                                    <img src="{{ $i['foto_url'] }}"
+                                         alt="{{ $i['titulo'] }}"
+                                         data-almox-foto="{{ $i['foto_url'] }}"
+                                         data-almox-titulo="{{ $legenda }}">
+                                @else
+                                    <div class="cat-card__media-vazio" aria-hidden="true"><i class="fa fa-cube"></i></div>
+                                @endif
+                            </div>
+                            <div class="cat-card__corpo">
+                                <h3 class="cat-card__titulo" title="{{ $i['titulo'] }}">{{ $i['titulo'] }}</h3>
+                                <p class="cat-card__meta">Disponível · <strong>{{ (int) $i['saldo'] }}</strong> un.</p>
+                            </div>
+                            <form class="cat-card__form" method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/itens') }}">
+                                @csrf
+                                <input type="hidden" name="modo" value="catalogo">
+                                <input type="hidden" name="item" value="{{ $i['sku'] }} · {{ $i['titulo'] }}">
+                                <label>Qtd
+                                    <input type="number" name="quantidade" min="1" max="{{ max(1, (int) $i['saldo']) }}" required value="1">
+                                </label>
+                                <button class="botao" type="submit" title="Incluir no pedido">
+                                    <i class="fa fa-cart-plus"></i> Incluir
+                                </button>
+                            </form>
+                        </article>
+                    @endforeach
+                </div>
             @endif
         </div>
 
@@ -189,6 +306,7 @@
             <table>
                 <thead>
                     <tr>
+                        <th style="width:64px">Foto</th>
                         <th>SKU</th>
                         <th>Item</th>
                         <th>Qtd</th>
@@ -215,11 +333,25 @@
                                 'sem_saldo' => 'Sem saldo',
                                 default => 'Catálogo',
                             };
+                            $fotoUrl = $item['foto_url']
+                                ?? \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\ItemFoto::url($item['foto'] ?? null);
+                            $tituloItem = $item['titulo'] ?? ($item['sku'] ?? 'Item');
                         @endphp
                         <tr @if($ehFalta || $cobertura) style="background:#fff5f5" @endif>
-                            <td>{{ $item['sku'] }}</td>
                             <td>
-                                {{ $item['titulo'] }}
+                                @if(!empty($fotoUrl))
+                                    <img class="almox-foto-thumb"
+                                         src="{{ $fotoUrl }}"
+                                         alt="{{ $tituloItem }}"
+                                         data-almox-foto="{{ $fotoUrl }}"
+                                         data-almox-titulo="{{ ($item['sku'] ?? '').' — '.$tituloItem }}">
+                                @else
+                                    <span class="almox-foto-placeholder"><i class="fa fa-cube"></i></span>
+                                @endif
+                            </td>
+                            <td>{{ $item['sku'] ?? '—' }}</td>
+                            <td>
+                                {{ $tituloItem }}
                                 @if($ehFalta)
                                     <span style="display:block;font-size:.75rem;color:#c0392b;margin-top:2px">
                                         <i class="fa fa-exclamation-circle"></i> Impede entrega até retirada
@@ -354,7 +486,8 @@
 
     @if($status !== 'carrinho')
         <div class="bloco">
-            <h2><i class="fa fa-check-square-o"></i> Assinaturas / qualidade</h2>
+            <h2><i class="fa fa-check-square-o"></i> Assinaturas formais</h2>
+            <p style="margin:0 0 8px;font-size:.8rem;color:var(--suave)">Aceite, Entrega e Conferência. Separação e Em trânsito são só operacionais.</p>
             <ul style="margin:0;padding-left:18px;color:var(--suave)">
                 @foreach($etapas as $etapa)
                     @php $a = $p['assinaturas'][$etapa] ?? null; @endphp
@@ -381,4 +514,6 @@
             </p>
         </div>
     @endif
+
+    @include('almoxarifado::partials.foto-lightbox')
 @endsection

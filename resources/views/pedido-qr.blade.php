@@ -19,6 +19,11 @@
 @endsection
 
 @section('conteudo')
+    <p style="font-size:.85rem;color:var(--suave,#5b6b76);max-width:42rem;margin:0 0 14px;">
+        Confirmação de recebimento exige usuário <strong>logado</strong> com permissão da etapa
+        <strong>Entrega</strong>. No APP:
+        <code>POST /api/apps/v1/equipe/almox/confirmar</code> com o token (Bearer Sanctum + perfil equipe).
+    </p>
 <style>
     .almox-qr-painel {
         display: grid; gap: 16px; grid-template-columns: minmax(240px, 280px) 1fr;

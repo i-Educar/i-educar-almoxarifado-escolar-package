@@ -18,6 +18,10 @@
 @endsection
 
 @section('conteudo')
+    <p style="font-size:.85rem;color:var(--suave,#5b6b76);max-width:42rem;margin:0 0 14px;">
+        Etiquetas/QR de remessa só alteram status (entrega) via usuário autenticado com permissão.
+        APP: <code>POST /api/apps/v1/equipe/almox/confirmar</code>.
+    </p>
 <style>
     .etiq-grade {
         display: grid;

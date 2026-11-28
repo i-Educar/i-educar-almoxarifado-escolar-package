@@ -2,7 +2,7 @@
 @php
     $p = $pedido['payload'];
     $id = (int) $pedido['id'];
-    $status = $p['status'] ?? 'fechado';
+    $status = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::normalizarStatus((string) ($p['status'] ?? 'solicitado'));
     $proxima = $proxima ?? null;
     $podeAssinar = ! empty($podeAssinar);
     $usuarioLogado = $usuarioLogado ?? ['nome' => '—', 'login' => null];
@@ -30,38 +30,33 @@
         <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> QR</a>
         <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/etiquetas') }}"><i class="fa fa-tags"></i> Etiquetas</a>
     @endif
-    <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/nota/pdf') }}"><i class="fa fa-file-pdf-o"></i> PDF institucional</a>
     <button class="botao claro" type="button" onclick="window.print()"><i class="fa fa-print"></i> Imprimir</button>
 @endsection
 
 @section('conteudo')
 @php
-    $inst = (array) config('exportacao.institucional', []);
-    $corInst = (string) ($inst['cor'] ?? ($identidade['cor'] ?? '#0a7a8a'));
-    $entidadeInst = (string) ($inst['entidade'] ?? ($municipio ?? 'Prefeitura Municipal'));
-    $secretariaInst = (string) ($inst['secretaria'] ?? 'Secretaria Municipal de Educação');
-    $sistemaInst = (string) ($inst['sistema'] ?? 'i-Educar');
+    $corNota = (string) ($identidade['cor'] ?? '#4a5a6a');
+    $entidadeNome = (string) ($municipio ?? config('app.name', 'i-Educar'));
 @endphp
 <style>
     .nota {
-        --nota-cor: {{ $corInst }};
+        --nota-cor: {{ $corNota }};
         background:#fff; border:1px solid var(--linha); border-radius:14px; padding:20px 22px 24px;
         border-top: 4px solid var(--nota-cor);
     }
     .nota.parcial-bloqueada { border-color:#c0392b; border-top-color:#c0392b; box-shadow:0 0 0 3px rgba(192,57,43,.12); }
     .nota.parcial-ok { border-color:var(--ambar); border-top-color:var(--ambar); }
-    .nota-institucional {
-        display:flex; gap:14px; align-items:center;
-        border-bottom:3px solid var(--nota-cor); padding-bottom:12px; margin-bottom:14px;
+    .nota-identidade {
+        display:flex; align-items:center; gap:12px;
+        margin:-4px 0 14px; padding-bottom:12px; border-bottom:1px solid var(--linha);
     }
-    .nota-institucional .brasao {
-        width:54px; height:54px; border-radius:12px; flex:none;
-        display:grid; place-items:center; color:#fff; font-weight:800; font-size:1.25rem;
-        background:linear-gradient(145deg, color-mix(in srgb, var(--nota-cor) 75%, #fff), var(--nota-cor));
+    .nota-identidade .marca-mini {
+        width:44px; height:44px; border-radius:12px; flex:none;
+        display:grid; place-items:center; color:#fff; font-size:18px;
+        background:linear-gradient(145deg, var(--destaque), var(--nota-cor));
     }
-    .nota-institucional h1 { margin:0; font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; color:var(--nota-cor); }
-    .nota-institucional .entidade { margin:2px 0 0; font-size:1.05rem; font-weight:800; color:var(--tinta); }
-    .nota-institucional .meta-inst { margin:2px 0 0; color:var(--suave); font-size:.8rem; }
+    .nota-identidade .titulo-doc { margin:0; font-size:1.05rem; font-weight:800; color:var(--tinta); }
+    .nota-identidade .sub-doc { margin:2px 0 0; font-size:.8rem; color:var(--suave); }
     .nota-cabeca { display:flex; justify-content:space-between; gap:16px; margin-bottom:14px; }
     .nota-cabeca h2 { margin:0 0 4px; font-size:1.15rem; color:var(--nota-cor); }
     .nota-cabeca p { margin:0; color:var(--suave); font-size:.86rem; }
@@ -69,16 +64,20 @@
     .faixa-parcial.bloqueio { background:#fff5f5; color:#922b21; border:1px solid #f5c6cb; }
     .faixa-parcial.info { background:#fffaf0; color:#8a6d3b; border:1px solid #f0e0c0; }
     .assinaturas {
-        display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:28px 32px;
-        margin-top:28px; padding-top:14px; border-top:1px solid var(--linha);
+        margin-top:24px; padding-top:14px; border-top:1px solid var(--linha);
         page-break-inside: avoid;
     }
     .assinaturas > h3 {
-        grid-column:1 / -1; margin:0 0 -8px; font-size:.78rem; letter-spacing:.06em;
+        margin:0 0 10px; font-size:.78rem; letter-spacing:.06em;
         text-transform:uppercase; color:var(--nota-cor);
     }
+    .assinaturas-linha {
+        display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px 14px;
+        align-items:stretch;
+    }
     .assinatura {
-        text-align:center; padding:48px 12px 0; min-height:0;
+        min-width:0;
+        text-align:center; padding:38px 6px 0; min-height:0;
         border:0; background:transparent; border-radius:0;
     }
     .assinatura.bloqueada { opacity:.7; }
@@ -86,22 +85,45 @@
         border-top:1px solid #1a242b; margin:0 18px 8px; height:0;
     }
     .assinatura .nome-assina {
-        display:block; margin:0; font-size:.9rem; font-weight:700; color:var(--tinta);
+        display:block; margin:0; font-size:.82rem; font-weight:700; color:var(--tinta);
+        line-height:1.25; word-break:break-word;
     }
     .assinatura .cargo-assina {
-        display:block; margin:2px 0 0; font-size:.8rem; font-weight:650; color:var(--nota-cor);
+        display:block; margin:2px 0 0; font-size:.72rem; font-weight:650; color:var(--nota-cor);
+        line-height:1.2;
     }
-    .assinatura .quando { margin:2px 0 0; font-size:.75rem; color:var(--suave); }
+    .assinatura .quando { margin:2px 0 0; font-size:.68rem; color:var(--suave); line-height:1.25; }
     .assinatura .pendente { margin:0; font-size:.78rem; color:var(--suave); font-style:italic; }
     .assinatura .bloqueio-txt { margin:0; color:#c0392b; font-size:.82rem; }
     .tr-falta { background:#fff5f5; }
     .tr-nao-atendido { background:#fffaf0; }
+    .nota-autenticidade {
+        display:grid; grid-template-columns:minmax(130px, 160px) 1fr; gap:16px 20px;
+        align-items:center; margin-top:22px; padding:14px 16px;
+        border:1px solid color-mix(in srgb, var(--nota-cor) 28%, var(--linha));
+        border-radius:12px; background:linear-gradient(180deg, #f8fbfc, #fff);
+        page-break-inside: avoid;
+    }
+    .nota-autenticidade h4 {
+        margin:0 0 6px; font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--nota-cor);
+    }
+    .nota-autenticidade .codigo-doc {
+        font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size:1rem; font-weight:800; letter-spacing:.08em; margin:0 0 6px;
+    }
+    .nota-autenticidade .qr-wrap { text-align:center; }
+    .nota-autenticidade .qr-wrap canvas,
+    .nota-autenticidade .qr-wrap img { max-width:100%; height:auto !important; }
     .nota-rodape-inst {
-        display:none; margin-top:22px; padding-top:10px; border-top:1px solid var(--linha);
+        display:none; margin-top:14px; padding-top:8px; border-top:1px solid var(--linha);
         color:var(--suave); font-size:.72rem; justify-content:space-between; gap:12px; flex-wrap:wrap;
     }
-    @media (max-width: 720px) {
-        .assinaturas { grid-template-columns:1fr; gap:22px; }
+    @media (max-width: 900px) {
+        .assinaturas-linha { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 520px) {
+        .assinaturas-linha { grid-template-columns:1fr; }
+        .nota-autenticidade { grid-template-columns:1fr; }
     }
     @media print {
         .lateral, .topo, .cabeca-tela, .acoes-tela, .flash, .bloco-assinar, .bloco-retirar,
@@ -114,6 +136,8 @@
         .faixa-parcial { border:1px solid #999; }
         .nota-rodape-inst { display:flex; }
         .assinaturas { break-inside: avoid; }
+        .assinaturas-linha { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+        .nota-autenticidade { break-inside: avoid; }
     }
 </style>
 
@@ -142,12 +166,11 @@
 @endif
 
 <div class="nota {{ $bloqueioEntrega ? 'parcial-bloqueada' : (!empty($naoAtendidos) ? 'parcial-ok' : '') }}">
-    <header class="nota-institucional">
-        <div class="brasao" aria-hidden="true">{{ mb_substr($entidadeInst, 0, 1) }}</div>
+    <header class="nota-identidade">
+        <div class="marca-mini" aria-hidden="true"><i class="fa fa-file-text-o"></i></div>
         <div>
-            <h1>{{ $secretariaInst }}</h1>
-            <p class="entidade">{{ $entidadeInst }}</p>
-            <p class="meta-inst">{{ $sistemaInst }} · Almoxarifado escolar · Documento oficial</p>
+            <p class="titulo-doc">Nota de material — Almoxarifado escolar</p>
+            <p class="sub-doc">{{ $entidadeNome }} · Pedido #{{ $id }}</p>
         </div>
     </header>
 
@@ -156,11 +179,16 @@
             <h2>Nota de material @if(!empty($p['parcial']) || $bloqueioEntrega)<span style="color:#c0392b;font-size:.85rem">(parcial)</span>@endif</h2>
             <p>Pedido #{{ $id }} · Escola: <strong>{{ $p['escola'] ?? '—' }}</strong></p>
             @if(!empty($p['solicitante']))
-                <p>Solicitante: {{ $p['solicitante'] }}</p>
+                <p style="margin:8px 0 0;padding:8px 10px;border-radius:8px;background:color-mix(in srgb, var(--nota-cor) 8%, #fff);border:1px solid color-mix(in srgb, var(--nota-cor) 22%, var(--linha));">
+                    <span style="display:block;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--nota-cor);font-weight:700;">Solicitado por</span>
+                    <strong style="font-size:.95rem;">{{ $p['solicitante'] }}</strong>
+                    <span style="display:block;margin-top:2px;font-size:.82rem;color:var(--suave);">
+                        @dataAbs($p['solicitado_em'] ?? $p['fechado_em'] ?? ($p['assinaturas']['aceite']['quando'] ?? null) ?? ($pedido['created_at'] ?? null))
+                    </span>
+                </p>
             @endif
         </div>
         <div style="text-align:right">
-            <p>Fechado em: @dataAbs($p['fechado_em'] ?? ($pedido['created_at'] ?? null))</p>
             <p>Status: {{ \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloStatus($status, $p) }}</p>
             @if($bloqueioEntrega)
                 <p style="color:#c0392b;font-weight:600"><i class="fa fa-lock"></i> Entrega bloqueada</p>
@@ -233,11 +261,22 @@
 
     <div class="assinaturas">
         <h3>Assinaturas</h3>
+        <div class="assinaturas-linha">
         @foreach($etapas as $etapa)
             @php
                 $a = $p['assinaturas'][$etapa] ?? null;
                 $bloqEtapa = $bloqueioEntrega && in_array($etapa, ['entrega', 'conferencia'], true) && empty($a);
                 $rotuloEtapa = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::rotuloEtapa($etapa);
+                $codAssina = trim((string) ($a['codigo_validacao'] ?? ''));
+                $urlAssina = trim((string) ($a['url_validacao'] ?? ''));
+                // Nunca expor host.docker.internal / validador LS cru sob a assinatura.
+                if ($codAssina !== '' && (
+                    $urlAssina === ''
+                    || str_contains($urlAssina, 'host.docker.internal')
+                    || str_contains($urlAssina, '/apps/libresign/')
+                )) {
+                    $urlAssina = url('/assinatura-digital/verificar/'.$codAssina);
+                }
             @endphp
             <div class="assinatura {{ $bloqEtapa ? 'bloqueada' : '' }}">
                 <div class="linha-assina" aria-hidden="true"></div>
@@ -247,6 +286,20 @@
                     <p class="quando">@data($a['quando'] ?? null)</p>
                     @if(!empty($a['observacao']))
                         <p class="quando">{{ $a['observacao'] }}</p>
+                    @endif
+                    @if(!empty($a['pedido_assinatura_id']))
+                        <p class="quando" style="color:var(--nota-cor);">Assinatura digital · LibreSign #{{ $a['pedido_assinatura_id'] }}</p>
+                    @endif
+                    @if($codAssina !== '' || $urlAssina !== '')
+                        <p class="quando" style="margin-top:6px;">
+                            @if($urlAssina !== '')
+                                <a href="{{ $urlAssina }}" target="_blank" rel="noopener" style="color:var(--nota-cor);font-size:.78rem;border-bottom:1px dotted var(--nota-cor);text-decoration:none;">
+                                    Conferir assinatura{{ $codAssina !== '' ? ' · '.$codAssina : '' }}
+                                </a>
+                            @else
+                                <span style="color:var(--nota-cor);font-size:.78rem;">Conferir assinatura · {{ $codAssina }}</span>
+                            @endif
+                        </p>
                     @endif
                 @elseif($bloqEtapa)
                     <span class="nome-assina">________________</span>
@@ -259,13 +312,63 @@
                 @endif
             </div>
         @endforeach
+        </div>
     </div>
 
+    @php
+        $validacaoDoc = is_array($p['validacao'] ?? null) ? $p['validacao'] : [];
+        $codigoDoc = trim((string) ($validacaoDoc['codigo'] ?? ''));
+        $urlDoc = trim((string) ($validacaoDoc['url'] ?? ''));
+        if ($urlDoc === '' && $codigoDoc !== '') {
+            $urlDoc = class_exists(\iEducar\Packages\BuritiAssinaturaDigital\Services\ValidacaoPublicaService::class)
+                ? app(\iEducar\Packages\BuritiAssinaturaDigital\Services\ValidacaoPublicaService::class)->urlPublica($codigoDoc)
+                : url('/exportacao/validar/'.$codigoDoc);
+        }
+    @endphp
+    @if($codigoDoc !== '' || $urlDoc !== '')
+        <section class="nota-autenticidade" aria-labelledby="nota-aut-{{ $id }}">
+            <div class="qr-wrap">
+                @if($urlDoc !== '')
+                    @include('almoxarifado::partials.qr-canvas', [
+                        'qrUrl' => $urlDoc,
+                        'qrId' => 'qr-nota-doc-'.$id,
+                        'qrSize' => 148,
+                    ])
+                @elseif(!empty($validacaoDoc['qr_data_uri']))
+                    <img src="{{ $validacaoDoc['qr_data_uri'] }}" alt="QR autenticidade" width="148" height="148"
+                         style="display:block;margin:0 auto;background:#fff;">
+                @endif
+            </div>
+            <div>
+                <h4 id="nota-aut-{{ $id }}"><i class="fa fa-shield"></i> Autenticidade do documento</h4>
+                @if($codigoDoc !== '')
+                    <p class="codigo-doc">{{ $codigoDoc }}</p>
+                @endif
+                <p style="margin:0 0 8px;font-size:.85rem;color:var(--tinta);">
+                    Escaneie o QR ou use o código para conferir se esta nota foi emitida neste ambiente.
+                </p>
+                @if($urlDoc !== '')
+                    <a href="{{ $urlDoc }}" target="_blank" rel="noopener" class="botao sm claro no-print" style="display:inline-flex">
+                        <i class="fa fa-external-link"></i> Conferir autenticidade
+                    </a>
+                    <p class="no-print" style="margin:8px 0 0;font-size:.72rem;color:var(--suave);word-break:break-all">{{ $urlDoc }}</p>
+                @endif
+                <p style="margin:8px 0 0;font-size:.72rem;color:var(--suave);">
+                    Cada assinatura acima possui código próprio de verificação (link «Conferir assinatura»).
+                </p>
+            </div>
+        </section>
+    @endif
+
     <footer class="nota-rodape-inst">
-        <span>{{ $inst['rodape_extra'] ?? 'Documento gerado eletronicamente' }}</span>
-        <span>{{ $sistemaInst }} · Almoxarifado · @dataAbs(now())</span>
+        <span>Documento gerado eletronicamente</span>
+        <span>Almoxarifado escolar · @dataAbs(now())</span>
     </footer>
 </div>
+
+@if(!empty($urlDoc))
+    @include('almoxarifado::partials.qr-script')
+@endif
 
 @if($bloqueioEntrega && $podeRetirarFaltosos && $faltosos !== [])
     <div class="bloco bloco-retirar" style="margin-top:14px;border-top-color:#c0392b">
@@ -297,6 +400,35 @@
     'semCobertura' => $semCobertura ?? [],
     'podeResolverCobertura' => $podeResolverCobertura ?? false,
 ])
+
+@php
+    $statusOp = \iEducar\Packages\BuritiAlmoxarifadoEscolar\Services\PedidoCarrinho::normalizarStatus((string) $status);
+    $podeMarcarSeparado = ! $finalizado
+        && in_array($statusOp, ['aceito', 'separacao'], true)
+        && empty($bloqueioEntrega)
+        && ! empty($podeAssinarSeparacao ?? $podeOperarDeposito ?? false);
+@endphp
+@if($podeMarcarSeparado)
+    <div class="bloco" style="margin-top:14px;border-top-color:#2a6f97">
+        <h2><i class="fa fa-cubes"></i> Separação (operacional)</h2>
+        <p style="margin:0 0 10px;color:var(--suave);font-size:.85rem">
+            Sem assinatura no PDF. Marque quando o material estiver separado; em seguida emita a remessa (Em trânsito) — o solicitante será notificado.
+        </p>
+        <form method="post" action="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/marcar-separado') }}" style="display:inline-flex;gap:8px;flex-wrap:wrap">
+            @csrf
+            <button class="botao" type="submit"><i class="fa fa-check"></i> Marcar separado</button>
+            <a class="botao claro" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> Emitir remessa / QR</a>
+        </form>
+    </div>
+@elseif(! $finalizado && in_array($statusOp, ['separado'], true))
+    <div class="bloco" style="margin-top:14px;border-top-color:#0b6e4f">
+        <h2><i class="fa fa-exchange"></i> Em trânsito</h2>
+        <p style="margin:0 0 10px;color:var(--suave);font-size:.85rem">
+            Material separado. Emita a remessa para registrar Em trânsito e avisar quem solicitou os itens.
+        </p>
+        <a class="botao" href="{{ url('/almoxarifado-escolar/pedidos/'.$id.'/qr') }}"><i class="fa fa-qrcode"></i> Emitir remessa / QR</a>
+    </div>
+@endif
 
 @if($proxima && $status !== 'carrinho' && ! $finalizado)
     <div class="bloco bloco-assinar" style="margin-top:14px">
