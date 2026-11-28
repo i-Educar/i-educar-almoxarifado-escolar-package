@@ -68,73 +68,80 @@
         --nota-cor: {{ $corNota }};
         background:#fff; border:1px solid var(--linha); border-radius:14px; padding:20px 22px 24px;
         border-top: 4px solid var(--nota-cor);
+        overflow-x: clip; min-width: 0;
     }
     .nota.parcial-bloqueada { border-color:#c0392b; border-top-color:#c0392b; box-shadow:0 0 0 3px rgba(192,57,43,.12); }
     .nota.parcial-ok { border-color:var(--ambar); border-top-color:var(--ambar); }
     .nota-identidade {
-        display:flex; align-items:center; gap:12px;
+        display:flex; align-items:center; gap:12px; min-width:0;
         margin:-4px 0 14px; padding-bottom:12px; border-bottom:1px solid var(--linha);
     }
+    .nota-identidade > div { min-width:0; }
     .nota-identidade .marca-mini {
         width:44px; height:44px; border-radius:12px; flex:none;
         display:grid; place-items:center; color:#fff; font-size:18px;
         background:linear-gradient(145deg, var(--destaque), var(--nota-cor));
     }
-    .nota-identidade .titulo-doc { margin:0; font-size:1.05rem; font-weight:800; color:var(--tinta); }
-    .nota-identidade .sub-doc { margin:2px 0 0; font-size:.8rem; color:var(--suave); }
-    .nota-cabeca { display:flex; justify-content:space-between; gap:16px; margin-bottom:14px; }
-    .nota-cabeca h2 { margin:0 0 4px; font-size:1.15rem; color:var(--nota-cor); }
-    .nota-cabeca p { margin:0; color:var(--suave); font-size:.86rem; }
-    .faixa-parcial { margin:0 0 14px; padding:10px 12px; border-radius:10px; font-size:.88rem; }
+    .nota-identidade .titulo-doc { margin:0; font-size:1.05rem; font-weight:800; color:var(--tinta); overflow-wrap:anywhere; }
+    .nota-identidade .sub-doc { margin:2px 0 0; font-size:.8rem; color:var(--suave); overflow-wrap:anywhere; }
+    .nota-cabeca { display:flex; justify-content:space-between; gap:16px; margin-bottom:14px; min-width:0; }
+    .nota-cabeca > div { min-width:0; flex:1 1 auto; }
+    .nota-cabeca h2 { margin:0 0 4px; font-size:1.15rem; color:var(--nota-cor); overflow-wrap:anywhere; }
+    .nota-cabeca p { margin:0; color:var(--suave); font-size:.86rem; overflow-wrap:anywhere; }
+    .nota-tabela-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 0 4px; }
+    .nota-tabela-wrap table { min-width:480px; }
+    .nota table td, .nota table th { overflow-wrap:anywhere; word-break:break-word; }
+    .faixa-parcial { margin:0 0 14px; padding:10px 12px; border-radius:10px; font-size:.88rem; overflow-wrap:anywhere; }
     .faixa-parcial.bloqueio { background:#fff5f5; color:#922b21; border:1px solid #f5c6cb; }
     .faixa-parcial.info { background:#fffaf0; color:#8a6d3b; border:1px solid #f0e0c0; }
     .assinaturas {
         margin-top:24px; padding-top:14px; border-top:1px solid var(--linha);
-        page-break-inside: avoid;
     }
     .assinaturas > h3 {
         margin:0 0 10px; font-size:.78rem; letter-spacing:.06em;
         text-transform:uppercase; color:var(--nota-cor);
     }
     .assinaturas-linha {
-        display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px 14px;
+        display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px 14px;
         align-items:stretch;
     }
     .assinatura {
         min-width:0;
-        text-align:center; padding:38px 6px 0; min-height:0;
+        text-align:center; padding:28px 4px 0; min-height:0;
         border:0; background:transparent; border-radius:0;
     }
     .assinatura.bloqueada { opacity:.7; }
     .assinatura .linha-assina {
-        border-top:1px solid #1a242b; margin:0 18px 8px; height:0;
+        border-top:1px solid #1a242b; margin:0 12px 8px; height:0;
     }
     .assinatura .nome-assina {
         display:block; margin:0; font-size:.82rem; font-weight:700; color:var(--tinta);
-        line-height:1.25; word-break:break-word;
+        line-height:1.25; overflow-wrap:anywhere; word-break:break-word;
     }
     .assinatura .cargo-assina {
         display:block; margin:2px 0 0; font-size:.72rem; font-weight:650; color:var(--nota-cor);
-        line-height:1.2;
+        line-height:1.2; overflow-wrap:anywhere;
     }
-    .assinatura .quando { margin:2px 0 0; font-size:.68rem; color:var(--suave); line-height:1.25; }
+    .assinatura .quando { margin:2px 0 0; font-size:.68rem; color:var(--suave); line-height:1.25; overflow-wrap:anywhere; }
     .assinatura .pendente { margin:0; font-size:.78rem; color:var(--suave); font-style:italic; }
-    .assinatura .bloqueio-txt { margin:0; color:#c0392b; font-size:.82rem; }
+    .assinatura .bloqueio-txt { margin:0; color:#c0392b; font-size:.82rem; overflow-wrap:anywhere; }
     .tr-falta { background:#fff5f5; }
     .tr-nao-atendido { background:#fffaf0; }
     .nota-autenticidade {
-        display:grid; grid-template-columns:minmax(130px, 160px) 1fr; gap:16px 20px;
+        display:grid; grid-template-columns:minmax(110px, 140px) minmax(0, 1fr); gap:14px 16px;
         align-items:center; margin-top:22px; padding:14px 16px;
         border:1px solid color-mix(in srgb, var(--nota-cor) 28%, var(--linha));
         border-radius:12px; background:linear-gradient(180deg, #f8fbfc, #fff);
-        page-break-inside: avoid;
+        min-width:0;
     }
+    .nota-autenticidade > div { min-width:0; }
     .nota-autenticidade h4 {
         margin:0 0 6px; font-size:.74rem; letter-spacing:.06em; text-transform:uppercase; color:var(--nota-cor);
     }
     .nota-autenticidade .codigo-doc {
         font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size:1rem; font-weight:800; letter-spacing:.08em; margin:0 0 6px;
+        font-size:.92rem; font-weight:800; letter-spacing:.04em; margin:0 0 6px;
+        overflow-wrap:anywhere; word-break:break-all;
     }
     .nota-autenticidade .qr-wrap { text-align:center; }
     .nota-autenticidade .qr-wrap canvas,
@@ -144,25 +151,40 @@
         color:var(--suave); font-size:.72rem; justify-content:space-between; gap:12px; flex-wrap:wrap;
     }
     @media (max-width: 900px) {
+        .nota { padding:14px 12px 16px; }
+        .nota-cabeca { flex-direction:column; gap:10px; }
+        .nota-cabeca > div[style*="text-align:right"] { text-align:left !important; }
         .assinaturas-linha { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 520px) {
         .assinaturas-linha { grid-template-columns:1fr; }
         .nota-autenticidade { grid-template-columns:1fr; }
+        .nota-identidade .titulo-doc { font-size:.95rem; }
+        .nota-cabeca h2 { font-size:1rem; }
     }
     @media print {
+        @page { size: A4; margin: 10mm; }
         .lateral, .topo, .cabeca-tela, .acoes-tela, .flash, .bloco-assinar, .bloco-retirar,
         .bloco, footer, .no-print { display:none !important; }
         .app { display:block; } .miolo { padding:0; } main { padding:0 !important; }
         .nota {
-            border:2.5px solid var(--nota-cor); border-radius:0; box-shadow:none;
-            padding:18px 20px 22px; margin:0;
+            border:2px solid var(--nota-cor); border-radius:0; box-shadow:none;
+            padding:12px 14px 14px; margin:0; overflow:visible;
         }
-        .faixa-parcial { border:1px solid #999; }
+        .faixa-parcial { border:1px solid #999; margin-bottom:8px; padding:6px 8px; font-size:.8rem; }
         .nota-rodape-inst { display:flex; }
-        .assinaturas { break-inside: avoid; }
-        .assinaturas-linha { grid-template-columns:repeat(4, minmax(0, 1fr)); }
-        .nota-autenticidade { break-inside: avoid; }
+        .assinaturas { break-inside: auto; margin-top:12px; padding-top:8px; }
+        .assinaturas-linha { grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px 8px; }
+        .assinatura { padding-top:16px; }
+        .nota-autenticidade {
+            break-inside: avoid; margin-top:10px; padding:8px 10px;
+            grid-template-columns:90px 1fr; gap:10px;
+        }
+        .nota-autenticidade .qr-wrap canvas,
+        .nota-autenticidade .qr-wrap img { max-width:88px !important; }
+        .nota-tabela-wrap { overflow:visible; }
+        .nota-tabela-wrap table { min-width:0; }
+        .nota table th, .nota table td { padding:4px 6px; font-size:.75rem; }
     }
 </style>
 
@@ -225,6 +247,7 @@
     </div>
 
     <p style="margin:0 0 8px;font-size:.82rem;color:var(--suave);font-weight:600">Itens atendidos / em curso</p>
+    <div class="nota-tabela-wrap">
     <table>
         <thead>
             <tr><th>#</th><th>SKU</th><th>Item</th><th>Qtd</th><th>Situação</th></tr>
@@ -260,9 +283,11 @@
             @endforeach
         </tbody>
     </table>
+    </div>
 
     @if(!empty($naoAtendidos))
         <p style="margin:16px 0 8px;font-size:.82rem;color:var(--ambar);font-weight:600">Itens não atendidos (providência futura)</p>
+        <div class="nota-tabela-wrap">
         <table>
             <thead>
                 <tr><th>#</th><th>SKU</th><th>Item</th><th>Qtd</th><th>Retirado por</th></tr>
@@ -282,6 +307,7 @@
                 @endforeach
             </tbody>
         </table>
+        </div>
     @endif
 
     <div class="assinaturas">

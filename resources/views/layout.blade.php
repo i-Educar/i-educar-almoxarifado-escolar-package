@@ -139,7 +139,26 @@
         .campo-fixado small { font-weight: 500; }
         footer.rodape { background: var(--nav); color: var(--nav-texto); border-top: 3px solid var(--destaque); padding: 12px 18px; font-size: .82rem; }
         @keyframes sobe { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-        @media (max-width: 860px) { .lateral { display: none; } }
+        @media (max-width: 860px) {
+            .lateral { display: none; }
+            main { padding: 12px 12px 22px; }
+            .cabeca-tela {
+                flex-wrap: wrap; align-items: flex-start; gap: 10px;
+                margin: -12px -12px 12px; padding: 12px;
+            }
+            .identidade-tela { flex: 1 1 100%; max-width: 100%; }
+            .identidade-tela > div { min-width: 0; }
+            .cabeca-tela h1 { font-size: 1.05rem; overflow-wrap: anywhere; }
+            .cabeca-tela .lead { max-width: none; overflow-wrap: anywhere; }
+            .cabeca-tela .acoes-tela {
+                margin-left: 0; width: 100%;
+                flex-wrap: wrap; justify-content: flex-start;
+            }
+            .flash { overflow-wrap: anywhere; }
+            .bloco { overflow-x: clip; }
+            table { font-size: .82rem; }
+            th, td { padding: 6px 7px; word-break: break-word; }
+        }
 
     </style>
     @include('buriti-ui::estilos')
