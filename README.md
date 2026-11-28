@@ -1,43 +1,57 @@
-# Almoxarifado escolar (TR 5.7)
+# Almoxarifado escolar
 
-Pacote Buriti para o i-Educar **2.12** (organização [i-Educar](https://github.com/i-Educar)).
+Estoque e distribuição de materiais pedagógicos e administrativos da rede para as escolas.
 
 Composer: `buriti/i-educar-almoxarifado-escolar-package`
+
+## Para que serve
+
+Centraliza o ciclo de pedido de materiais: da solicitação da escola ao aceite, separação, remessa, entrega e conferência — com saldo, balanço e documentos assináveis.
+
+## Desenho de funções
+
+| Função | Entrega |
+| --- | --- |
+| Catálogo de itens | Cadastro com foto, unidade e atributos do material |
+| Saldos e balanço | Posição de estoque e exportação de balanço |
+| Pedidos (carrinho) | Abertura, itens, fechamento e nota/etiquetas/QR |
+| Trilho operacional | solicitado → aceite → separação → separado → em trânsito → entregue → conferido |
+| Assinaturas formais | Aceite, entrega e conferência integráveis à assinatura digital |
+| Remessa / notificação | Marcação em trânsito e aviso ao solicitante |
+| Painel SME/escola | `/almoxarifado-escolar` |
+
+## Quem usa
+
+- Almoxarifado / SME
+- Direção e secretaria da escola
+- Conferentes na entrega
+
+## Integrações
+
+- Assinatura digital (LibreSign)
+- Exportação unificada
+- Núcleo (escolas, usuários, permissões)
 
 ## Compatibilidade
 
 | Produto | Versão |
 | --- | --- |
-| **i-Educar** | **2.12.x** (min. 2.12.0) |
-| **i-Diário** | Portabilis i-Diário (espelho Laguna) via API/SSO do core |
-| Pacote | `0.2.2` |
+| **i-Educar** | **2.12.x** |
+| **i-Diário** | Portabilis i-Diário (API / SSO do núcleo) |
+| Pacote | `0.2.3` |
 
-Declarado em `composer.json` → `extra.ieducar` e `extra.idiario`.
+Declarado em `composer.json` → `extra.ieducar` / `extra.idiario`.
 
-## Ciclo do pedido
+## Documentação
 
-```
-solicitado → aceite → separação → separado → em trânsito → entregue → conferido
-```
+| Documento | Uso |
+| --- | --- |
+| [`EPIC.md`](./EPIC.md) | Escopo de produto, aceite e critérios |
+| [`ROADMAP.md`](./ROADMAP.md) | Fases e entregas |
+| [`TODO.md`](./TODO.md) | Backlog operacional |
+| [`REQUISITOS-TR.md`](./REQUISITOS-TR.md) | Rastreio de requisitos (planejamento) |
+| [`CHANGELOG.md`](./CHANGELOG.md) | Histórico de versões |
 
-| Etapa | Tipo | Onde aparece |
-| --- | --- | --- |
-| Solicitado | operacional | Trilho / status (quem pediu + data/hora no PDF) |
-| **Aceite** | **assinatura** | PDF, verificação pública, LibreSign |
-| Separação / Separado | operacional | Trilho; botão «Marcar separado» |
-| Em trânsito | operacional | Remessa/QR; **notifica o solicitante**; **não** na verificação |
-| **Entrega** | **assinatura** | PDF / verificação (após Em trânsito) |
-| **Conferência** | **assinatura** | PDF / verificação (finaliza o pedido) |
+---
 
-Assinaturas formais (`PedidoCarrinho::ETAPAS_ASSINATURA`): `aceite`, `entrega`, `conferencia`.
-
-## Documentos Laguna / PE-77/2026
-
-- `EPIC.md` · `ROADMAP.md` · `TODO.md` · `REQUISITOS-TR.md` · `CHANGELOG.md`
-- Padrão: `packages/buriti/PADRAO-PACOTE-2.12.md` (no monorepo)
-
-## Smoke
-
-```bash
-php packages/buriti/i-educar-almoxarifado-escolar-package/tests/run.php
-```
+Licença: **GPL-2.0-or-later** · Organização [i-Educar](https://github.com/i-Educar)
